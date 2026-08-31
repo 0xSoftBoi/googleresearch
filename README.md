@@ -1,1 +1,81 @@
-# googleresearch
+# TimesFM-3: A Zero-Shot Foundation Model for Multivariate Forecasting
+
+A PyTorch implementation of the TimesFM-3 architecture described in the Google
+Research blog post
+["TimesFM-3: A zero-shot foundation model for multivariate forecasting"](https://research.google/blog/timesfm-3-a-zero-shot-foundation-model-for-multivariate-forecasting/).
+
+TimesFM-3 is a decoder-style time-series foundation model that natively
+supports:
+
+- **Multiple simultaneous target series** with point and quantile forecasts.
+- **Past-only covariates** (historical features whose future is unknown).
+- **Past–future covariates** (signals known ahead of time, e.g. holidays,
+  scheduled promotions, weather forecasts).
+- **Single-forward-pass horizon decoding** — no autoregressive roll-out.
+
+## Architecture (as implemented here)
+
+| Component | Blog description | Where |
+|---|---|---|
+| Patching | Contiguous points grouped into patches of **32 time steps** | `timesfm3/embedding.py` |
+| Normalization | Per-time-series (reversible) normalization from context statistics | `timesfm3/normalization.py` |
+| Token construction | Standard series: one token per patch. Future-known covariates: **lookahead** — the current patch is concatenated with future patches so the model can peek at upcoming known signals | `timesfm3/embedding.py` |
+| Alternating attention | A 2D grid of tokens (series × time). **Temporal attention** is strictly causal within each series; **cross-variate attention** lets a token attend to every other series at the same time step | `timesfm3/attention.py`, `timesfm3/blocks.py` |
+| Decoding | **Contiguous Patch Masking**: target and past-only covariate patches are masked over the horizon while past–future covariates remain visible, and the whole horizon is produced in one forward pass | `timesfm3/model.py` |
+| Output | **9 quantiles (q10 … q90)** plus a point forecast for every target at every horizon step | `timesfm3/model.py` |
+| Scale | ~330 M parameter base configuration (plus a small config for experimentation) | `timesfm3/configuration.py` |
+
+## Layout
+
+```
+timesfm3/
+  configuration.py   # model / training hyper-parameters (base ≈ 330M params)
+  normalization.py   # per-series reversible normalization (context statistics)
+  embedding.py       # patching, residual-MLP patch embedding, lookahead tokens
+  attention.py       # multi-head attention with rotary embeddings (temporal)
+  blocks.py          # alternating temporal / cross-variate transformer layers
+  model.py           # TimesFM3Model: contiguous patch masking + quantile head
+  forecaster.py      # high-level numpy-in / numpy-out zero-shot forecast API
+  loss.py            # quantile (pinball) + point losses
+  data/synthetic.py  # synthetic multivariate pre-training corpus generator
+  train.py           # pre-training loop (real + synthetic corpus)
+examples/
+  forecast_example.py
+```
+
+## Quick start
+
+```bash
+pip install -r requirements.txt
+python examples/forecast_example.py
+```
+
+```python
+import numpy as np
+from timesfm3 import TimesFM3Config, TimesFM3Forecaster
+
+forecaster = TimesFM3Forecaster(TimesFM3Config.small())  # or .base() for ~330M
+
+result = forecaster.forecast(
+    targets=[np.sin(np.arange(512) / 10.0)],       # one or more target series
+    past_covariates=[np.random.randn(512)],        # optional, history only
+    future_covariates=[np.random.randn(512 + 128)],# optional, known over horizon
+    horizon=128,
+)
+result.point      # (num_targets, horizon) point forecast
+result.quantiles  # (num_targets, horizon, 9) q10 ... q90
+```
+
+## Pre-training
+
+The released model was pre-trained on a real-world plus synthetic corpus of
+more than 1 trillion time points. This repo ships the training objective
+(quantile + point loss under contiguous patch masking) and a synthetic
+multivariate corpus generator so the pipeline is runnable end to end:
+
+```bash
+python -m timesfm3.train --config small --steps 1000
+```
+
+This is an independent re-implementation of the publicly described
+architecture; no pre-trained weights are included.
