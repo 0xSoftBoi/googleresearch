@@ -86,17 +86,27 @@ python -m timesfm3.train --config tiny --steps 600 --batch-size 16 \
 python examples/plot_forecast.py --checkpoint timesfm3_checkpoint.pt
 ```
 
-The tiny (1M parameter) config trains in ~20 minutes on CPU and already
-produces calibrated seasonal forecasts on held-out synthetic series. After
-4000 steps it reaches a scaled MAE of **0.80** on 249 held-out target
-series, versus **1.27** for a last-value baseline and **1.06** for a
-context-mean baseline (`examples/evaluate.py`):
+The tiny (1M parameter) config trains in ~25 minutes on CPU with held-out
+validation and best-checkpoint saving. After 8000 steps (best validation
+loss 1.405), scaled MAE against naive baselines:
+
+| Evaluation | model | last-value | seasonal-naive | context-mean |
+|---|---|---|---|---|
+| Held-out synthetic (248 target series) | **0.94** | 1.26 | — | 1.18 |
+| ETTh1, real data, zero-shot (40×7 windows) | **0.90** | 1.04 | 0.70 | — |
+
+On real ETTh1 data — never seen in training — the model transfers well
+enough to beat the last-value baseline, though 1M parameters of
+synthetic-only pretraining does not yet beat a daily seasonal-naive on
+strongly daily-periodic data; the released model's zero-shot quality comes
+from its >1T-point corpus and 334× larger capacity.
 
 ![Demo forecast](docs/forecast_demo.png)
 
 The plot (`examples/plot_forecast.py`) shows the single-pass decode on two
 correlated targets with a known-future covariate: the point forecast
-continues the seasonal phase and the q10–q90 band widens with lead time.
+continues the seasonal phase, anticipates the covariate-driven peak, and
+the q10–q90 band widens with lead time.
 
 This is an independent re-implementation of the publicly described
 architecture; no pre-trained weights are included, and the released
