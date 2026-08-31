@@ -1,8 +1,10 @@
 """Training objective: quantile (pinball) loss plus a point loss.
 
-Losses are computed only at masked horizon positions of target series, in
-original units, so the model learns calibrated quantiles under the same
-contiguous-patch-masking regime used at inference time.
+Losses are computed at masked horizon positions, in normalized units, so
+the model learns calibrated quantiles under the same contiguous-patch-
+masking regime used at inference time. Masked past-only covariate patches
+contribute as an auxiliary objective (the model forecasts every masked
+series), which densifies the training signal in multivariate examples.
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ def forecast_loss(
     actuals: torch.Tensor,
     roles: torch.Tensor,
     variate_mask: torch.Tensor | None = None,
+    covariate_weight: float = 0.5,
 ) -> torch.Tensor:
     """Combined point (MSE) + quantile loss over masked target patches.
 
@@ -53,15 +56,23 @@ def forecast_loss(
         actuals: (B, N, T) ground-truth values over context + horizon.
         roles: (B, N) series roles.
         variate_mask: optional (B, N) bool for real series.
+        covariate_weight: relative weight of masked past-only covariate
+            patches (targets weigh 1.0).
 
     Returns:
         Scalar loss.
     """
-    # (B, N, T) weight: masked horizon steps of target series only.
+    # (B, N, T) weight over masked horizon steps: full for targets, reduced
+    # for past-only covariates (auxiliary), zero elsewhere.
     step_mask = output.masked.bool().repeat_interleave(
         config.patch_len, dim=-1
     )
-    weight = (step_mask & (roles == ROLE_TARGET)[:, :, None]).float()
+    series_weight = torch.where(
+        roles == ROLE_TARGET,
+        torch.ones_like(roles, dtype=actuals.dtype),
+        torch.full_like(roles, covariate_weight, dtype=actuals.dtype),
+    )
+    weight = step_mask.to(actuals.dtype) * series_weight[:, :, None]
     if variate_mask is not None:
         weight = weight * variate_mask[:, :, None].float()
     denom = weight.sum().clamp(min=1.0)

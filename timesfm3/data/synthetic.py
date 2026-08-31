@@ -52,18 +52,20 @@ class SyntheticMultivariateCorpus(torch.utils.data.IterableDataset):
             trend = np.zeros(t)
             for power in range(rng.integers(0, 3)):
                 trend += rng.normal(0, 0.5) * (time / t) ** (power + 1)
-            # Seasonality: a few random sinusoids.
+            # Seasonality: a few random sinusoids. Kept dominant relative to
+            # noise so the corpus rewards learning predictable structure.
             season = np.zeros(t)
             for _ in range(rng.integers(1, 4)):
                 period = rng.uniform(8, t / 2)
                 phase = rng.uniform(0, 2 * np.pi)
-                season += rng.exponential(0.5) * np.sin(
+                season += rng.exponential(1.0) * np.sin(
                     2 * np.pi * time / period + phase
                 )
-            # AR(1)-style noise.
+            # AR(1)-style noise; a small fraction of series is noise-heavy.
             noise = np.zeros(t)
             phi = rng.uniform(-0.9, 0.95)
-            eps = rng.normal(0, rng.exponential(0.2), size=t)
+            noise_scale = rng.exponential(0.5 if rng.uniform() < 0.15 else 0.1)
+            eps = rng.normal(0, noise_scale, size=t)
             for step in range(1, t):
                 noise[step] = phi * noise[step - 1] + eps[step]
             signals[i] = trend + season + noise

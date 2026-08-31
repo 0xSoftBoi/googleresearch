@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import random
 
 import torch
 
@@ -74,11 +75,14 @@ def train(
         roles = batch["roles"].to(device)
         variate_mask = batch["variate_mask"].to(device)
 
+        # Vary the masked-horizon length so the model learns every offset it
+        # will see at inference time (excess patches simply become context).
+        step_horizon = random.randint(1, horizon_patches)
         output = model(
             values=values,
             observed=observed,
             roles=roles,
-            num_horizon_patches=horizon_patches,
+            num_horizon_patches=step_horizon,
             variate_mask=variate_mask,
         )
         loss = forecast_loss(config, output, values, roles, variate_mask)
