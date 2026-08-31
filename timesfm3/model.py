@@ -103,6 +103,11 @@ class TimesFM3Model(nn.Module):
         if num_horizon_patches <= 0 or num_horizon_patches >= num_patches:
             raise ValueError("num_horizon_patches must be in [1, num_patches).")
 
+        # Sanitize before any arithmetic: unobserved positions may hold NaN
+        # (missing data) or arbitrary padding, and NaN * 0 would poison the
+        # normalization statistics.
+        values = torch.where(observed, values, torch.zeros_like(values))
+
         # Contiguous patch mask over the horizon: targets and past-only
         # covariates are hidden; past-future covariates stay visible.
         patch_idx = torch.arange(num_patches, device=values.device)

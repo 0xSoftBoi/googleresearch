@@ -25,22 +25,28 @@ supports:
 | Output | **9 quantiles (q10 … q90, median at index 4)** plus a point forecast for every target at every horizon step, with optional quantile-crossing repair | `timesfm3/model.py`, `timesfm3/forecaster.py` |
 | Scale | Base config matches the released TimesFM-3 dimensions — 20 layers, model dim 1280, 16 heads — at ~334 M parameters (`small` and `tiny` configs included for experimentation) | `timesfm3/configuration.py` |
 
+A detailed walkthrough of the token grid, attention layout, and known
+deviations from the released model lives in [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Layout
 
 ```
 timesfm3/
-  configuration.py   # model / training hyper-parameters (base ≈ 330M params)
+  configuration.py   # model / training hyper-parameters (base ≈ 334M params)
   normalization.py   # per-series reversible normalization (context statistics)
   embedding.py       # patching, residual-MLP patch embedding, lookahead tokens
   attention.py       # multi-head attention with rotary embeddings (temporal)
   blocks.py          # alternating temporal / cross-variate transformer layers
   model.py           # TimesFM3Model: contiguous patch masking + quantile head
-  forecaster.py      # high-level numpy-in / numpy-out zero-shot forecast API
-  loss.py            # quantile (pinball) + point losses
+  forecaster.py      # numpy-in / numpy-out API: rolling decode, NaN handling
+  loss.py            # normalized quantile (pinball) + point losses
   data/synthetic.py  # synthetic multivariate pre-training corpus generator
-  train.py           # pre-training loop (real + synthetic corpus)
+  train.py           # pre-training loop with held-out validation
 examples/
-  forecast_example.py
+  forecast_example.py  # API demo: multivariate targets + covariates
+  plot_forecast.py     # point + q10-q90 band vs ground truth
+  evaluate.py          # held-out synthetic eval vs naive baselines
+  evaluate_ett.py      # zero-shot eval on the real ETTh1 benchmark
 ```
 
 ## Quick start

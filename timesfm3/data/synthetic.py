@@ -44,32 +44,33 @@ class SyntheticMultivariateCorpus(torch.utils.data.IterableDataset):
         return (self.context_patches + self.horizon_patches) * self.config.patch_len
 
     def _base_signals(self, rng: np.random.Generator, k: int, t: int) -> np.ndarray:
-        """Draws k independent latent signals of length t."""
+        """Draws k independent latent signals of length t (vectorized)."""
         time = np.arange(t, dtype=np.float64)
-        signals = np.zeros((k, t))
-        for i in range(k):
-            # Trend: random low-order polynomial.
-            trend = np.zeros(t)
-            for power in range(rng.integers(0, 3)):
-                trend += rng.normal(0, 0.5) * (time / t) ** (power + 1)
-            # Seasonality: a few random sinusoids. Kept dominant relative to
-            # noise so the corpus rewards learning predictable structure.
-            season = np.zeros(t)
-            for _ in range(rng.integers(1, 4)):
-                period = rng.uniform(8, t / 2)
-                phase = rng.uniform(0, 2 * np.pi)
-                season += rng.exponential(1.0) * np.sin(
-                    2 * np.pi * time / period + phase
-                )
-            # AR(1)-style noise; a small fraction of series is noise-heavy.
-            noise = np.zeros(t)
-            phi = rng.uniform(-0.9, 0.95)
-            noise_scale = rng.exponential(0.5 if rng.uniform() < 0.15 else 0.1)
-            eps = rng.normal(0, noise_scale, size=t)
-            for step in range(1, t):
-                noise[step] = phi * noise[step - 1] + eps[step]
-            signals[i] = trend + season + noise
-        return signals
+
+        # Trend: random low-order polynomial per latent.
+        powers = np.array([1.0, 2.0, 3.0])
+        trend_coef = rng.normal(0, 0.5, size=(k, 3))
+        trend_coef *= rng.integers(0, 3, size=(k, 1)) > np.arange(3)
+        trend = trend_coef @ (time[None, :] / t) ** powers[:, None]
+
+        # Seasonality: up to 3 random sinusoids per latent. Kept dominant
+        # relative to noise so the corpus rewards predictable structure.
+        periods = rng.uniform(8, t / 2, size=(k, 3, 1))
+        phases = rng.uniform(0, 2 * np.pi, size=(k, 3, 1))
+        amps = rng.exponential(1.0, size=(k, 3, 1))
+        amps *= rng.integers(1, 4, size=(k, 1, 1)) > np.arange(3)[None, :, None]
+        season = (amps * np.sin(2 * np.pi * time / periods + phases)).sum(axis=1)
+
+        # AR(1)-style noise; a small fraction of latents is noise-heavy.
+        phi = rng.uniform(-0.9, 0.95, size=k)
+        heavy = rng.uniform(size=k) < 0.15
+        noise_scale = rng.exponential(np.where(heavy, 0.5, 0.1))
+        eps = rng.normal(0, 1, size=(k, t)) * noise_scale[:, None]
+        noise = np.zeros((k, t))
+        for step in range(1, t):
+            noise[:, step] = phi * noise[:, step - 1] + eps[:, step]
+
+        return trend + season + noise
 
     def _sample(self, rng: np.random.Generator) -> dict[str, torch.Tensor]:
         t = self.total_len

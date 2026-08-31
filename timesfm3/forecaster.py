@@ -87,6 +87,8 @@ class TimesFM3Forecaster:
         Args:
             targets: one or more 1-D arrays of length `context`; all series
                 must share the same context length and be time-aligned.
+                NaN values (in any input series) are treated as missing
+                observations and masked from the model.
             horizon: number of future steps to forecast. Horizons beyond the
                 single-pass maximum are decoded in rolling chunks.
             past_covariates: optional 1-D arrays of length `context`.
@@ -197,17 +199,23 @@ class TimesFM3Forecaster:
         roles = np.full((1, n), ROLE_PAST_COVARIATE, dtype=np.int64)
         roles[0, :num_targets] = ROLE_TARGET
 
+        # NaN input values are treated as missing observations.
         for row, series in enumerate(evolving):
-            values[0, row, left_pad:padded_context] = series[crop:]
-            observed[0, row, left_pad:padded_context] = True
+            chunk_vals = series[crop:]
+            values[0, row, left_pad:padded_context] = np.nan_to_num(chunk_vals)
+            observed[0, row, left_pad:padded_context] = np.isfinite(chunk_vals)
         for offset, series in enumerate(known):
             row = len(evolving) + offset
-            values[0, row, left_pad:padded_context] = series[crop:context]
-            values[0, row, padded_context : padded_context + chunk] = series[
-                context:
-            ]
-            observed[0, row, left_pad:padded_context] = True
-            observed[0, row, padded_context : padded_context + chunk] = True
+            ctx_vals = series[crop:context]
+            hor_vals = series[context:]
+            values[0, row, left_pad:padded_context] = np.nan_to_num(ctx_vals)
+            values[0, row, padded_context : padded_context + chunk] = (
+                np.nan_to_num(hor_vals)
+            )
+            observed[0, row, left_pad:padded_context] = np.isfinite(ctx_vals)
+            observed[0, row, padded_context : padded_context + chunk] = (
+                np.isfinite(hor_vals)
+            )
             roles[0, row] = ROLE_FUTURE_COVARIATE
 
         output = self.model(
