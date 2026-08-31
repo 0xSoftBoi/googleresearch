@@ -1,3 +1,15 @@
+Metadata-Version: 2.4
+Name: timesfm3
+Version: 0.1.0
+Summary: Independent PyTorch implementation of TimesFM-3, a zero-shot foundation model for multivariate time-series forecasting.
+License: Apache-2.0
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: torch>=2.4
+Requires-Dist: numpy>=1.24
+Provides-Extra: examples
+Requires-Dist: matplotlib>=3.7; extra == "examples"
+
 # TimesFM-3: A Zero-Shot Foundation Model for Multivariate Forecasting
 
 A PyTorch implementation of the TimesFM-3 architecture described in the Google
@@ -21,9 +33,9 @@ supports:
 | Normalization | Per-time-series (reversible) normalization from context statistics | `timesfm3/normalization.py` |
 | Token construction | Standard series: one token per patch. Future-known covariates: **lookahead** — the current patch is concatenated with future patches so the model can peek at upcoming known signals | `timesfm3/embedding.py` |
 | Alternating attention | A 2D grid of tokens (series × time). **Temporal attention** is strictly causal within each series; **cross-variate attention** lets a token attend to every other series at the same time step | `timesfm3/attention.py`, `timesfm3/blocks.py` |
-| Decoding | **Contiguous Patch Masking**: target and past-only covariate patches are masked over the horizon while past–future covariates remain visible, and the whole horizon is produced in one forward pass. Horizons beyond the single-pass maximum roll forward chunk by chunk | `timesfm3/model.py`, `timesfm3/forecaster.py` |
-| Output | **9 quantiles (q10 … q90, median at index 4)** plus a point forecast for every target at every horizon step, with optional quantile-crossing repair | `timesfm3/model.py`, `timesfm3/forecaster.py` |
-| Scale | Base config matches the released TimesFM-3 dimensions — 20 layers, model dim 1280, 16 heads — at ~334 M parameters (`small` and `tiny` configs included for experimentation) | `timesfm3/configuration.py` |
+| Decoding | **Contiguous Patch Masking**: target and past-only covariate patches are masked over the horizon while past–future covariates remain visible, and the whole horizon is produced in one forward pass | `timesfm3/model.py` |
+| Output | **9 quantiles (q10 … q90)** plus a point forecast for every target at every horizon step | `timesfm3/model.py` |
+| Scale | ~330 M parameter base configuration (plus a small config for experimentation) | `timesfm3/configuration.py` |
 
 ## Layout
 
@@ -46,7 +58,7 @@ examples/
 ## Quick start
 
 ```bash
-pip install -e .
+pip install -r requirements.txt
 python examples/forecast_example.py
 ```
 
@@ -54,8 +66,7 @@ python examples/forecast_example.py
 import numpy as np
 from timesfm3 import TimesFM3Config, TimesFM3Forecaster
 
-forecaster = TimesFM3Forecaster(TimesFM3Config.small())  # or .base() for ~334M
-# ... or load weights you trained: TimesFM3Forecaster.from_checkpoint("ckpt.pt")
+forecaster = TimesFM3Forecaster(TimesFM3Config.small())  # or .base() for ~330M
 
 result = forecaster.forecast(
     targets=[np.sin(np.arange(512) / 10.0)],       # one or more target series
@@ -75,17 +86,8 @@ more than 1 trillion time points. This repo ships the training objective
 multivariate corpus generator so the pipeline is runnable end to end:
 
 ```bash
-python -m timesfm3.train --config tiny --steps 600 --batch-size 16 \
-    --context-patches 8 --horizon-patches 2
-python examples/plot_forecast.py --checkpoint timesfm3_checkpoint.pt
+python -m timesfm3.train --config small --steps 1000
 ```
 
-The tiny config trains in a few minutes on CPU and already produces
-calibrated seasonal forecasts on held-out synthetic series (see
-`examples/plot_forecast.py`, which renders the point forecast and the
-q10–q90 band against the ground truth).
-
 This is an independent re-implementation of the publicly described
-architecture; no pre-trained weights are included, and the released
-TimesFM-3 checkpoint (which carries its own non-commercial license) is a
-separate artifact from this code.
+architecture; no pre-trained weights are included.

@@ -1,7 +1,9 @@
 """High-level numpy-in / numpy-out forecasting API for TimesFM-3.
 
-Handles patch-multiple padding, per-role tensor assembly, and slicing the
-horizon out of the model's single-forward-pass decode.
+Handles patch-multiple padding, per-role tensor assembly, quantile-crossing
+repair, and horizons longer than the model's single-pass maximum by rolling
+the contiguous-patch-masked decode forward (the model's own point forecasts
+become context for the next chunk).
 """
 
 from __future__ import annotations
@@ -29,7 +31,8 @@ class ForecastResult:
     Attributes:
         point: (num_targets, horizon) point forecasts.
         quantiles: (num_targets, horizon, Q) quantile forecasts, ordered by
-            the configured quantile levels (q10 ... q90 by default).
+            the configured quantile levels (q10 ... q90 by default; the
+            median sits at index 4).
         quantile_levels: the quantile levels for the last axis.
     """
 
@@ -57,6 +60,19 @@ class TimesFM3Forecaster:
         self.model.to(self.device)
         self.model.eval()
 
+    @classmethod
+    def from_checkpoint(
+        cls,
+        path: str,
+        device: str | torch.device | None = None,
+    ) -> "TimesFM3Forecaster":
+        """Loads a checkpoint produced by ``timesfm3.train``."""
+        state = torch.load(path, map_location="cpu", weights_only=False)
+        config: TimesFM3Config = state["config"]
+        model = TimesFM3Model(config)
+        model.load_state_dict(state["model"])
+        return cls(config=config, model=model, device=device)
+
     @torch.no_grad()
     def forecast(
         self,
@@ -64,17 +80,22 @@ class TimesFM3Forecaster:
         horizon: int,
         past_covariates: Sequence[np.ndarray] = (),
         future_covariates: Sequence[np.ndarray] = (),
+        fix_quantile_crossing: bool = True,
     ) -> ForecastResult:
         """Produces point and quantile forecasts for the target series.
 
         Args:
             targets: one or more 1-D arrays of length `context`; all series
                 must share the same context length and be time-aligned.
-            horizon: number of future steps to forecast.
+            horizon: number of future steps to forecast. Horizons beyond the
+                single-pass maximum are decoded in rolling chunks.
             past_covariates: optional 1-D arrays of length `context`.
             future_covariates: optional 1-D arrays of length
                 `context + horizon` — their future values are known and stay
                 visible to the model over the horizon.
+            fix_quantile_crossing: sort each step's quantiles so the levels
+                are monotone (crossings can occur since quantiles are
+                predicted jointly but independently per level).
 
         Returns:
             A :class:`ForecastResult` for the targets, in original units.
@@ -82,6 +103,8 @@ class TimesFM3Forecaster:
         cfg = self.config
         if not targets:
             raise ValueError("At least one target series is required.")
+        if horizon <= 0:
+            raise ValueError("horizon must be positive.")
         context = len(targets[0])
         for series in list(targets) + list(past_covariates):
             if len(series) != context:
@@ -95,48 +118,97 @@ class TimesFM3Forecaster:
                     "Future covariates must cover context + horizon "
                     f"({context + horizon} steps), got {len(series)}."
                 )
-        if horizon > cfg.max_horizon_len:
-            raise ValueError(
-                f"horizon {horizon} exceeds the model's single-pass maximum "
-                f"of {cfg.max_horizon_len} steps."
-            )
 
-        # Pad context on the left and horizon on the right to patch multiples.
+        # Evolving contexts: the model's own point forecasts are appended so
+        # long horizons can roll forward chunk by chunk.
+        num_targets = len(targets)
+        evolving = [
+            np.asarray(s, dtype=np.float32).copy()
+            for s in list(targets) + list(past_covariates)
+        ]
+        known = [np.asarray(s, dtype=np.float32) for s in future_covariates]
+
+        point_chunks: list[np.ndarray] = []
+        quantile_chunks: list[np.ndarray] = []
+        produced = 0
+        while produced < horizon:
+            chunk = min(horizon - produced, cfg.max_horizon_len)
+            ctx_len = context + produced
+            point, quantiles = self._forecast_chunk(
+                evolving=evolving,
+                num_targets=num_targets,
+                known=[s[: ctx_len + chunk] for s in known],
+                chunk=chunk,
+            )
+            point_chunks.append(point[:num_targets])
+            quantile_chunks.append(quantiles[:num_targets])
+            for i in range(len(evolving)):
+                evolving[i] = np.concatenate([evolving[i], point[i]])
+            produced += chunk
+
+        point = np.concatenate(point_chunks, axis=1)
+        quantiles = np.concatenate(quantile_chunks, axis=1)
+        if fix_quantile_crossing:
+            quantiles = np.sort(quantiles, axis=-1)
+        return ForecastResult(
+            point=point,
+            quantiles=quantiles,
+            quantile_levels=cfg.quantiles,
+        )
+
+    def _forecast_chunk(
+        self,
+        evolving: list[np.ndarray],
+        num_targets: int,
+        known: list[np.ndarray],
+        chunk: int,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Single-pass decode of `chunk` steps for every series.
+
+        Args:
+            evolving: targets followed by past covariates, each of one shared
+                context length (only the context — nothing beyond it).
+            num_targets: how many leading rows of `evolving` are targets.
+            known: future covariates, each covering context + chunk steps.
+            chunk: horizon steps to decode (<= cfg.max_horizon_len).
+
+        Returns:
+            (point, quantiles) for the evolving series over the chunk:
+            point is (len(evolving), chunk), quantiles is
+            (len(evolving), chunk, Q), both denormalized.
+        """
+        cfg = self.config
+        context = len(evolving[0])
+
+        # Pad context on the left and horizon on the right to patch
+        # multiples; crop the oldest history beyond the supported context.
         padded_context = min(
             cfg.max_context_len,
             math.ceil(context / cfg.patch_len) * cfg.patch_len,
         )
         left_pad = padded_context - min(context, padded_context)
-        crop = max(0, context - padded_context)  # drop oldest if too long
-        horizon_patches = math.ceil(horizon / cfg.patch_len)
-        padded_horizon = horizon_patches * cfg.patch_len
-        total = padded_context + padded_horizon
+        crop = max(0, context - padded_context)
+        horizon_patches = math.ceil(chunk / cfg.patch_len)
+        total = padded_context + horizon_patches * cfg.patch_len
 
-        n = len(targets) + len(past_covariates) + len(future_covariates)
+        n = len(evolving) + len(known)
         values = np.zeros((1, n, total), dtype=np.float32)
         observed = np.zeros((1, n, total), dtype=bool)
-        roles = np.zeros((1, n), dtype=np.int64)
+        roles = np.full((1, n), ROLE_PAST_COVARIATE, dtype=np.int64)
+        roles[0, :num_targets] = ROLE_TARGET
 
-        row = 0
-        for series in targets:
+        for row, series in enumerate(evolving):
             values[0, row, left_pad:padded_context] = series[crop:]
             observed[0, row, left_pad:padded_context] = True
-            roles[0, row] = ROLE_TARGET
-            row += 1
-        for series in past_covariates:
-            values[0, row, left_pad:padded_context] = series[crop:]
-            observed[0, row, left_pad:padded_context] = True
-            roles[0, row] = ROLE_PAST_COVARIATE
-            row += 1
-        for series in future_covariates:
-            values[0, row, left_pad:padded_context] = series[crop : context]
-            values[0, row, padded_context : padded_context + horizon] = series[
+        for offset, series in enumerate(known):
+            row = len(evolving) + offset
+            values[0, row, left_pad:padded_context] = series[crop:context]
+            values[0, row, padded_context : padded_context + chunk] = series[
                 context:
             ]
             observed[0, row, left_pad:padded_context] = True
-            observed[0, row, padded_context : padded_context + horizon] = True
+            observed[0, row, padded_context : padded_context + chunk] = True
             roles[0, row] = ROLE_FUTURE_COVARIATE
-            row += 1
 
         output = self.model(
             values=torch.from_numpy(values).to(self.device),
@@ -146,11 +218,7 @@ class TimesFM3Forecaster:
         )
 
         start = padded_context
-        num_targets = len(targets)
-        point = output.point[0, :num_targets, start : start + horizon, 0]
-        quantiles = output.quantiles[0, :num_targets, start : start + horizon]
-        return ForecastResult(
-            point=point.cpu().numpy(),
-            quantiles=quantiles.cpu().numpy(),
-            quantile_levels=cfg.quantiles,
-        )
+        rows = len(evolving)
+        point = output.point[0, :rows, start : start + chunk, 0]
+        quantiles = output.quantiles[0, :rows, start : start + chunk]
+        return point.cpu().numpy(), quantiles.cpu().numpy()

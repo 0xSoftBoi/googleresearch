@@ -102,20 +102,24 @@ def train(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Pre-train TimesFM-3.")
-    parser.add_argument("--config", choices=["small", "base"], default="small")
+    parser.add_argument("--config", choices=["tiny", "small", "base"], default="small")
     parser.add_argument("--steps", type=int, default=10_000)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--lr", type=float, default=3e-4)
+    parser.add_argument("--context-patches", type=int, default=16)
+    parser.add_argument("--horizon-patches", type=int, default=4)
     parser.add_argument("--device", default=None)
     parser.add_argument("--checkpoint", default="timesfm3_checkpoint.pt")
     args = parser.parse_args()
 
-    config = TimesFM3Config.small() if args.config == "small" else TimesFM3Config.base()
+    config = getattr(TimesFM3Config, args.config)()
     train(
         config,
         steps=args.steps,
         batch_size=args.batch_size,
         peak_lr=args.lr,
+        context_patches=args.context_patches,
+        horizon_patches=args.horizon_patches,
         device=args.device,
         checkpoint_path=args.checkpoint,
     )

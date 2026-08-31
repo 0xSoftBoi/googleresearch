@@ -43,6 +43,10 @@ def forecast_loss(
 ) -> torch.Tensor:
     """Combined point (MSE) + quantile loss over masked target patches.
 
+    Both terms are computed in normalized units (errors divided by each
+    series' context scale), so series with vastly different magnitudes
+    contribute comparably to the objective.
+
     Args:
         config: model configuration (for quantile levels).
         output: model forward output (denormalized).
@@ -62,10 +66,13 @@ def forecast_loss(
         weight = weight * variate_mask[:, :, None].float()
     denom = weight.sum().clamp(min=1.0)
 
-    point_err = (output.point.squeeze(-1) - actuals) ** 2
+    std = output.std  # (B, N, 1)
+    point_err = ((output.point.squeeze(-1) - actuals) / std) ** 2
     point_loss = (point_err * weight).sum() / denom
 
-    q_loss = quantile_loss(output.quantiles, actuals, config.quantiles)
+    q_loss = quantile_loss(
+        output.quantiles / std.unsqueeze(-1), actuals / std, config.quantiles
+    )
     q_loss = (q_loss.mean(dim=-1) * weight).sum() / denom
 
     return point_loss + q_loss

@@ -38,11 +38,16 @@ class TimesFM3Output:
         point: (B, N, T, 1) point forecast per series and time step.
         quantiles: (B, N, T, Q) quantile forecasts (q10 ... q90).
         masked: (B, N, P) the contiguous patch mask that was applied.
+        mean: (B, N, 1) per-series normalization means.
+        std: (B, N, 1) per-series normalization scales. Training losses
+            divide by these so every series contributes at unit scale.
     """
 
     point: torch.Tensor
     quantiles: torch.Tensor
     masked: torch.Tensor
+    mean: torch.Tensor
+    std: torch.Tensor
 
 
 class TimesFM3Model(nn.Module):
@@ -133,4 +138,6 @@ class TimesFM3Model(nn.Module):
             point=out[..., :1],
             quantiles=out[..., 1:],
             masked=masked,
+            mean=normalizer.mean,
+            std=normalizer.std,
         )
