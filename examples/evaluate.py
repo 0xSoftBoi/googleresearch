@@ -48,6 +48,11 @@ def main() -> None:
             values = ex["values"].numpy()
             observed = ex["observed"].numpy()
             roles = ex["roles"].numpy()
+            # The corpus left-truncates with unobserved zeros; drop that
+            # prefix so the forecaster only sees real observations.
+            first = int(np.argmax(observed[0]))
+            values = values[:, first:]
+            observed = observed[:, first:]
             context = values.shape[1] - horizon
 
             target_rows = np.where(roles == ROLE_TARGET)[0]
