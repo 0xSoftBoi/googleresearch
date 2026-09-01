@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TimesFM-3 Forecast Service</title>
+<style>
+  :root{--bg:#0f1115;--panel:#171a21;--line:#262b36;--text:#e6e8ee;--muted:#8b93a7;--accent:#5b9cff;--band:#5b9cff;--good:#3ecf8e;--bad:#ff6b6b;--warn:#f5b73b}
+  @media (prefers-color-scheme: light){:root{--bg:#f6f7fa;--panel:#fff;--line:#e2e5ec;--text:#161821;--muted:#5f677a}}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  header{display:flex;align-items:center;justify-content:space-between;padding:14px 22px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header h1{font-size:16px;margin:0;font-weight:600}header h1 span{color:var(--muted);font-weight:400;margin-left:8px}
+  header a{color:var(--muted);text-decoration:none;margin-left:16px}header a:hover{color:var(--text)}
+  main{display:grid;grid-template-columns:340px 1fr;gap:16px;padding:16px 22px;max-width:1500px;margin:0 auto}
+  @media (max-width:900px){main{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 10px}
+  label{display:block;color:var(--muted);font-size:12px;margin:10px 0 4px}
+  input,select,textarea,button{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 9px;width:100%}
+  textarea{height:180px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;white-space:pre;resize:vertical}
+  .row{display:flex;gap:8px}.row>*{flex:1}
+  button{cursor:pointer;background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;margin-top:10px}
+  button.secondary{background:transparent;color:var(--text)}button:disabled{opacity:.5;cursor:wait}
+  .stat{display:inline-block;margin:0 14px 4px 0;color:var(--muted);font-size:12px}.stat b{color:var(--text);font-weight:600}
+  svg{width:100%;height:380px;display:block}
+  table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums}th:first-child,td:first-child{text-align:left}th{color:var(--muted);font-weight:500}
+  .better{color:var(--good)}.worse{color:var(--bad)}.nodiff{color:var(--muted)}.ref{color:var(--warn)}
+  .err{color:var(--bad);margin-top:8px;white-space:pre-wrap;font-size:12px}
+  .legend{display:flex;gap:14px;font-size:12px;color:var(--muted);margin:6px 0}.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:middle}
+  footer{padding:10px 22px 24px;color:var(--muted);font-size:12px;max-width:1500px;margin:0 auto}
+</style>
+</head>
+<body>
+<header>
+  <h1>TimesFM-3 Forecast Service <span id="ver"></span></h1>
+  <nav><a href="/docs">API docs</a><a href="/metrics">metrics</a><a href="https://github.com/0xSoftBoi/googleresearch" target="_blank" rel="noopener">source</a></nav>
+</header>
+<main>
+  <section class="card">
+    <h2>Input</h2>
+    <label>Data (CSV: optional timestamp column, one column per series)</label>
+    <textarea id="csv" spellcheck="false" placeholder="date,sales,temp&#10;2024-01-01,120,3.2&#10;2024-01-02,132,4.0"></textarea>
+    <div class="row">
+      <button class="secondary" id="sample">Load sample (ETTh2)</button>
+      <button class="secondary" id="file-btn">Upload CSV</button>
+      <input type="file" id="file" accept=".csv,.tsv,.txt" hidden>
+    </div>
+    <label>Model</label><select id="model"></select>
+    <div class="row">
+      <div><label>Horizon (steps)</label><input id="horizon" type="number" min="1" max="4096" value="48"></div>
+      <div><label>Context (steps, backtest)</label><input id="context" type="number" min="8" value="256"></div>
+    </div>
+    <div class="row">
+      <div><label>Backtest windows</label><input id="windows" type="number" min="3" max="500" value="12"></div>
+      <div><label>API key (if required)</label><input id="key" type="password" placeholder="X-API-Key"></div>
+    </div>
+    <button id="go">Forecast</button>
+    <button class="secondary" id="bt">Backtest all models on this data</button>
+    <div class="err" id="err"></div>
+  </section>
+  <section>
+    <div class="card">
+      <h2>Forecast</h2>
+      <div id="stats"></div>
+      <div class="legend"><span><i class="sw" style="background:var(--text)"></i>history</span><span><i class="sw" style="background:var(--accent)"></i>point forecast</span><span><i class="sw" style="background:var(--band);opacity:.45"></i>q30–q70</span><span><i class="sw" style="background:var(--band);opacity:.2"></i>q10–q90</span></div>
+      <div class="row" style="margin-bottom:6px"><select id="series"></select></div>
+      <svg id="chart" viewBox="0 0 1000 380" preserveAspectRatio="none"></svg>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h2>Backtest <span id="bt-meta" style="text-transform:none;letter-spacing:0"></span></h2>
+      <div id="bt-out" style="overflow-x:auto"><p style="color:var(--muted);margin:0">Walk-forward comparison of every model against last-value on your own series: mean absolute error ratio, cluster-bootstrap 95% CI, HAC Diebold–Mariano p-value with Holm correction. A model is only worth deploying if it is <b>better</b> here.</p></div>
+    </div>
+  </section>
+</main>
+<footer>Quantile bands from TimesFM-3 are model outputs; bands for classical models are in-context walk-forward residual quantiles. No result on this page is investment advice.</footer>
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  let panel=null, last=null;
+  const headers=()=>{const h={'content-type':'application/json'};const k=$('key').value.trim();if(k)h['x-api-key']=k;return h;};
+  try{$('key').value=localStorage.getItem('timesfm3_key')||'';}catch(e){}
+  $('key').addEventListener('change',()=>{try{localStorage.setItem('timesfm3_key',$('key').value)}catch(e){}});
+  const err=m=>{$('err').textContent=m||'';};
+  async function api(path,opts){const r=await fetch(path,Object.assign({headers:headers()},opts||{}));const t=await r.text();let j;try{j=JSON.parse(t)}catch(e){j={detail:t}}if(!r.ok)throw new Error(typeof j.detail==='string'?j.detail:JSON.stringify(j.detail));return j;}
+
+  function parseCSV(text){
+    const lines=text.split(/\r?\n/).filter(l=>l.trim().length);
+    if(!lines.length)throw new Error('No data.');
+    const delim=(lines[0].split('\t').length>lines[0].split(',').length)?'\t':',';
+    let rows=lines.map(l=>l.split(delim).map(c=>c.trim()));
+    const isNum=c=>c===''||/^(nan|na|null)$/i.test(c)||!isNaN(parseFloat(c));
+    let names=null;
+    if(rows[0].slice(1).some(c=>!isNum(c))||(rows[0].length===1&&!isNum(rows[0][0]))){names=rows[0];rows=rows.slice(1);}
+    if(!rows.length)throw new Error('Header only.');
+    const hasTime=!isNum(rows[0][0]);
+    const start=hasTime?1:0;
+    const width=rows[0].length;
+    const timestamps=hasTime?rows.map(r=>r[0]):null;
+    const values=[];
+    for(let j=start;j<width;j++)values.push(rows.map((r,i)=>{if(r.length!==width)throw new Error('Row '+(i+1)+' has '+r.length+' cells, expected '+width);const c=r[j];const v=parseFloat(c);return (c===''||isNaN(v))?null:v;}));
+    const nm=(names&&names.length===width)?names.slice(start):values.map((_,j)=>'series_'+j);
+    return {names:nm,timestamps,values};
+  }
+  function readInput(){const t=$('csv').value;if(!t.trim())throw new Error('Paste CSV data or load the sample.');panel=parseCSV(t);return panel;}
+
+  async function loadModels(){
+    const ms=await api('/v1/models');const sel=$('model');sel.innerHTML='';
+    ms.forEach(m=>{const o=document.createElement('option');o.value=m.name;o.textContent=(m.default?'★ ':'')+m.name+' — '+m.kind+(m.parameters?' ('+(m.parameters/1e6).toFixed(1)+'M params)':'');if(m.default)o.selected=true;sel.appendChild(o);});
+  }
+  async function loadSample(){
+    const s=await api('/v1/sample?n=720');
+    const lines=[[ 'timestamp'].concat(s.names).join(',')];
+    for(let i=0;i<s.values[0].length;i++)lines.push([s.timestamps?s.timestamps[i]:i].concat(s.values.map(v=>v[i]===null?'':v[i])).join(','));
+    $('csv').value=lines.join('\n');err('');
+  }
+  async function forecast(){
+    err('');const p=readInput();
+    const req={targets:p.names.map((n,i)=>({name:n,values:p.values[i]})),horizon:+$('horizon').value,model:$('model').value||null};
+    if(p.timestamps)req.timestamps=p.timestamps;
+    $('go').disabled=true;
+    try{last=await api('/v1/forecast',{method:'POST',body:JSON.stringify(req)});
+      $('stats').innerHTML='<span class="stat">model <b>'+last.model+'</b></span><span class="stat">horizon <b>'+last.horizon+'</b></span><span class="stat">series <b>'+last.forecasts.length+'</b></span><span class="stat">latency <b>'+last.latency_ms.toFixed(0)+' ms</b></span>'+(last.timestamps?'<span class="stat">until <b>'+last.timestamps[last.timestamps.length-1]+'</b></span>':'');
+      const sel=$('series');sel.innerHTML='';last.forecasts.forEach((f,i)=>{const o=document.createElement('option');o.value=i;o.textContent=f.name;sel.appendChild(o);});
+      draw(0);
+    }catch(e){err(e.message);}finally{$('go').disabled=false;}
+  }
+  function draw(i){
+    if(!last||!panel)return;const f=last.forecasts[i];const hist=panel.values[i];
+    const tail=hist.slice(-Math.max(3*f.point.length,120));
+    const n=tail.length,h=f.point.length,W=1000,H=380,pad={l:56,r:16,t:12,b:26};
+    const q=f.quantiles||{};const all=tail.filter(v=>v!==null).concat(f.point,q.q10||[],q.q90||[]);
+    let lo=Math.min.apply(null,all),hi=Math.max.apply(null,all);if(hi===lo){hi+=1;lo-=1;}const m=(hi-lo)*0.06;lo-=m;hi+=m;
+    const x=k=>pad.l+(W-pad.l-pad.r)*k/(n+h-1), y=v=>pad.t+(H-pad.t-pad.b)*(1-(v-lo)/(hi-lo));
+    const path=(arr,off)=>{let d='',pen=false;arr.forEach((v,k)=>{if(v===null){pen=false;return;}d+=(pen?'L':'M')+x(off+k).toFixed(1)+' '+y(v).toFixed(1)+' ';pen=true;});return d;};
+    const band=(a,b)=>{if(!a||!b)return '';let d='M';a.forEach((v,k)=>d+=x(n-1+k+1).toFixed(1)+' '+y(v).toFixed(1)+' L');d=d.slice(0,-1);for(let k=b.length-1;k>=0;k--)d+=' L'+x(n+k).toFixed(1)+' '+y(b[k]).toFixed(1);return d+' Z';};
+    let s='';
+    for(let g=0;g<5;g++){const v=lo+(hi-lo)*g/4;s+='<line x1="'+pad.l+'" x2="'+(W-pad.r)+'" y1="'+y(v).toFixed(1)+'" y2="'+y(v).toFixed(1)+'" stroke="var(--line)"/><text x="'+(pad.l-6)+'" y="'+(y(v)+4).toFixed(1)+'" fill="var(--muted)" font-size="11" text-anchor="end">'+fmt(v)+'</text>';}
+    s+='<line x1="'+x(n-1).toFixed(1)+'" x2="'+x(n-1).toFixed(1)+'" y1="'+pad.t+'" y2="'+(H-pad.b)+'" stroke="var(--muted)" stroke-dasharray="4 4"/>';
+    s+='<path d="'+band(q.q10,q.q90)+'" fill="var(--band)" opacity=".2"/><path d="'+band(q.q30,q.q70)+'" fill="var(--band)" opacity=".45"/>';
+    s+='<path d="'+path(tail,0)+'" fill="none" stroke="var(--text)" stroke-width="1.4"/>';
+    s+='<path d="'+path([tail[n-1]].concat(f.point),n-1)+'" fill="none" stroke="var(--accent)" stroke-width="2"/>';
+    s+='<text x="'+x(n-1).toFixed(1)+'" y="'+(H-8)+'" fill="var(--muted)" font-size="11" text-anchor="middle">forecast origin</text>';
+    $('chart').innerHTML=s;
+  }
+  const fmt=v=>Math.abs(v)>=1000?v.toFixed(0):Math.abs(v)>=10?v.toFixed(1):v.toFixed(2);
+  async function backtest(){
+    err('');const p=readInput();$('bt').disabled=true;
+    try{
+      const j=await api('/v1/backtest',{method:'POST',body:JSON.stringify({series:p.names.map((n,i)=>({name:n,values:p.values[i]})),context:+$('context').value,horizon:+$('horizon').value,windows:+$('windows').value})});
+      $('bt-meta').textContent='— '+j.metric.toUpperCase()+' ratio vs '+j.reference+', context '+j.context+', horizon '+j.horizon+', '+j.windows_per_series+' non-overlapping windows/series, '+j.latency_ms.toFixed(0)+' ms';
+      let t='<table><tr><th>model</th><th>mean '+j.metric+'</th><th>ratio</th><th>95% CI</th><th>p (Holm)</th><th>win rate</th><th>n (eff.)</th><th>verdict</th></tr>';
+      j.scores.forEach(s=>{const cls=s.verdict==='better'?'better':s.verdict==='worse'?'worse':s.verdict==='reference'?'ref':'nodiff';
+        t+='<tr><td>'+s.model+'</td><td>'+s.mean_loss.toPrecision(4)+'</td><td class="'+cls+'"><b>'+s.ratio.toFixed(3)+'</b></td><td>'+(s.ci_low!==null?'['+s.ci_low.toFixed(3)+', '+s.ci_high.toFixed(3)+']':'—')+'</td><td>'+(s.p_adjusted!==null?s.p_adjusted.toFixed(3):'—')+'</td><td>'+(s.verdict==='reference'?'—':(100*s.win_rate).toFixed(0)+'%')+'</td><td>'+s.n+' ('+s.n_effective.toFixed(0)+')</td><td class="'+cls+'">'+s.verdict+'</td></tr>';});
+      $('bt-out').innerHTML=t+'</table>';
+    }catch(e){err(e.message);}finally{$('bt').disabled=false;}
+  }
+  $('sample').onclick=()=>loadSample().catch(e=>err(e.message));
+  $('file-btn').onclick=()=>$('file').click();
+  $('file').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$('csv').value=r.result;err('');};r.readAsText(f);};
+  $('go').onclick=forecast;$('bt').onclick=backtest;$('series').onchange=e=>draw(+e.target.value);
+  api('/healthz').then(h=>{$('ver').textContent='v'+h.version+' · '+h.models+' models · '+h.device;}).catch(()=>{});
+  loadModels().catch(e=>err('Could not load models: '+e.message+(e.message.includes('API key')?' — enter the key and reload.':'')));
+})();
+</script>
+</body>
+</html>

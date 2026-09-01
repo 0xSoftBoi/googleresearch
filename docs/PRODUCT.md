@@ -1,0 +1,250 @@
+# TimesFM-3 Forecast Service — product guide
+
+A self-hosted forecasting service. Send it your time series, get back point
+forecasts with calibrated quantile bands, and — before you trust any of it —
+run a statistically honest backtest that tells you whether the model beats a
+random walk on *your* data.
+
+Everything runs from one command, on CPU, with a bundled model:
+
+```bash
+pip install "timesfm3[serve] @ git+https://github.com/0xSoftBoi/googleresearch"
+timesfm3 serve
+# dashboard  http://localhost:8000/
+# OpenAPI    http://localhost:8000/docs
+```
+
+```bash
+curl -s -X POST localhost:8000/v1/forecast -H 'content-type: application/json' \
+  -d '{"targets":[{"name":"sales","values":[12,15,14,18,21,19,24,27,25,30,33,31]}],"horizon":4}'
+```
+
+## Who it is for
+
+- **Product and ops teams** that need demand, load, traffic or capacity
+  forecasts with uncertainty bands, behind an API they control.
+- **Data teams** that want to compare a foundation model against classical
+  baselines on their own data with proper significance tests, not vibes.
+- **Quant and risk desks** that need volatility forecasts and
+  volatility-targeted position sizes from daily returns.
+
+## What you get
+
+| Piece | What it does |
+|---|---|
+| `timesfm3 serve` | REST API (FastAPI) + dashboard + Prometheus metrics, optional API key |
+| Bundled starter model | TimesFM-3 `small` config pre-trained on real data, ships in the package (~10 MB) |
+| Classical baselines | last-value, drift, context-mean, EWMA, AR(1), AR(4), each with quantile bands |
+| `/v1/backtest` | Walk-forward comparison with cluster-bootstrap CIs, HAC Diebold–Mariano tests, Holm correction |
+| `/v1/volatility` | HAR and RiskMetrics variance forecasts, Moreira–Muir vol-targeted weight |
+| `timesfm3` CLI | forecast / backtest CSV files, list models, package checkpoints, train |
+| `timesfm3.client` | Dependency-free Python client returning numpy arrays |
+| Docker image | CPU-only, ~1 GB, health-checked, extra checkpoints via a mounted volume |
+
+## Quick start
+
+### Local
+
+```bash
+git clone https://github.com/0xSoftBoi/googleresearch && cd googleresearch
+make install            # pip install -e ".[serve]"
+timesfm3 serve          # http://localhost:8000
+```
+
+### Docker
+
+```bash
+docker compose up --build        # or: docker build -t timesfm3 . && docker run -p 8000:8000 timesfm3
+```
+
+Mount packaged checkpoints into `/models` and they are served next to the
+bundled one.
+
+### Forecast a CSV without a server
+
+```bash
+timesfm3 forecast data.csv --horizon 24 --output forecast.csv     # long format, q10..q90
+timesfm3 forecast data.csv --horizon 24 --format json --model ewma
+```
+
+CSV layout: one row per time step, one column per series, optional leading
+timestamp column and header. Empty cells are missing values.
+
+### Backtest before you believe anything
+
+```bash
+timesfm3 backtest data.csv --context 256 --horizon 24 --windows 20
+```
+
+```
+model               mean mae   ratio            95% CI  p (Holm)   win    n (eff)  verdict
+starter-small          1.912   0.763    [0.701, 0.831]     0.000   71%  140 (  96)  better
+ewma                   2.346   0.936    [0.863, 0.983]     0.002   63%  140 (  64)  better
+last-value             2.505   1.000                 -         -     -  140 ( 140)  reference
+drift                  2.527   1.009    [1.000, 1.017]     0.344   47%  140 ( 140)  no difference
+```
+
+Every model is scored on the same non-overlapping windows; the ratio is its
+mean loss over the reference's (below 1 is better); the interval is a
+bootstrap that resamples whole series so windows from one series are not
+treated as independent; the p-value is a HAC-corrected Diebold–Mariano test
+with Holm correction across the models tested. **Deploy a model only when
+its verdict is `better`.**
+
+## API reference
+
+All `/v1` endpoints accept and return JSON. If `TIMESFM3_API_KEY` is set,
+send it as `X-API-Key: <key>` or `Authorization: Bearer <key>`;
+`/healthz` stays open for load balancers.
+
+### `POST /v1/forecast`
+
+```json
+{
+  "targets":           [{"name": "sales", "values": [12, 15, null, 18]}],
+  "past_covariates":   [{"name": "temp",  "values": [3.1, 4.0, 2.2, 5.5]}],
+  "future_covariates": [{"name": "promo", "values": [0, 0, 1, 0, 1, 1]}],
+  "horizon": 2,
+  "model": "starter-small",
+  "quantiles": true,
+  "timestamps": ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04"],
+  "freq": "D"
+}
+```
+
+- `targets` — one or more series of equal length; `null` is a missing value.
+- `past_covariates` — same length as targets; their future is unknown.
+- `future_covariates` — length `context + horizon`; known ahead (calendar,
+  promotions, weather forecasts). Only TimesFM-3 checkpoints accept covariates.
+- `timestamps` / `freq` — optional; when given, the response carries future
+  timestamps (`freq` is inferred from the timestamps if omitted).
+
+Response:
+
+```json
+{
+  "model": "starter-small", "horizon": 2, "quantile_levels": [0.1, "...", 0.9],
+  "timestamps": ["2024-01-05T00:00:00", "2024-01-06T00:00:00"],
+  "forecasts": [{"name": "sales", "point": [19.7, 21.2],
+                 "quantiles": {"q10": [15.1, 15.9], "q20": ["..."], "q90": [24.4, 26.8]}}],
+  "latency_ms": 41.3
+}
+```
+
+Errors: `400` invalid inputs (mismatched lengths, covariates on a classical
+model), `404` unknown model, `413` request over the configured limits,
+`422` schema violations.
+
+### `POST /v1/backtest`
+
+```json
+{"series": [{"values": ["..."]}], "context": 256, "horizon": 24,
+ "models": ["starter-small", "ewma"], "reference": "last-value",
+ "windows": 20, "metric": "mae", "overlap": false}
+```
+
+Returns one `ModelScore` per model: `mean_loss`, `ratio`, `ci_low`,
+`ci_high`, `p_value`, `p_adjusted`, `win_rate`, `n`, `n_effective`,
+`verdict` (`better` / `worse` / `no difference` / `reference`).
+
+### `POST /v1/volatility`
+
+```json
+{"returns": [0.004, -0.011, "..."], "horizon": 5, "vol_target": 0.10, "max_leverage": 3.0}
+```
+
+or `{"prices": [...]}`. Returns, for `riskmetrics` (λ = 0.94) and `har`
+(Corsi 2009), the daily variance path, annualized vol, and the
+Moreira–Muir weight `vol_target / forecast_vol` capped at `max_leverage`.
+
+### `GET /v1/models`, `GET /healthz`, `GET /metrics`, `GET /v1/sample`
+
+Model inventory (name, kind, parameters, provenance, default flag);
+liveness; Prometheus text exposition (requests, errors, latency, series and
+steps forecast); a demo panel for the dashboard.
+
+## Models
+
+### Bundled starter model
+
+`starter-small` ships inside the package (`timesfm3/assets/`). It is the
+`small` TimesFM-3 config (≈5.2 M parameters) pre-trained by
+`scripts/train_starter.py` on ETTh1, ETTm1, ETTm2 and daily exchange rates
+mixed 70/30 with the synthetic corpus, with calendar covariates and role
+randomization. ETTh2 was never seen; the dashboard's sample data is the
+ETTh2 tail, so what you see there is a genuine zero-shot forecast.
+
+Measured on ETTh2 (7 series, context 256, horizon 24, 20 non-overlapping
+windows per series, MAE ratio vs last-value; `timesfm3 backtest`):
+
+STARTER_RESULTS_PENDING: measured on the bundled checkpoint in the commit that adds it.
+
+Retrain it with `make starter-model` (≈35 min on 4 CPU cores; a GPU and the
+`base` config are the path to released-model quality).
+
+### Bring your own checkpoint
+
+```bash
+timesfm3 train --config small --steps 20000 --checkpoint my.pt     # or your own loop
+timesfm3 pack my.pt my-packed.pt --name demand-v1 --description "..."
+timesfm3 serve --checkpoint demand-v1=my-packed.pt --default-model demand-v1
+```
+
+Packaged checkpoints are half precision with a provenance `meta` block; the
+server lists that metadata on `/v1/models`. Multiple checkpoints can be
+served at once (`--checkpoint` is repeatable, or set `TIMESFM3_MODEL_DIR`).
+
+### Classical baselines
+
+Always registered. They have no quantile head, so their bands are
+walk-forward residual quantiles estimated inside the context window
+(nothing beyond the forecast origin is used), falling back to a Gaussian
+band scaled by the one-step residual times √h when the context is short.
+
+## Configuration
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `TIMESFM3_API_KEY` | unset | Require this key on `/v1/*` |
+| `TIMESFM3_CHECKPOINTS` | unset | Comma-separated `[name=]path` checkpoints to serve |
+| `TIMESFM3_MODEL_DIR` | unset (`/models` in Docker) | Serve every `*.pt` in this directory |
+| `TIMESFM3_DEFAULT_MODEL` | last checkpoint added, else `ewma` | Model used when a request omits `model` |
+| `TIMESFM3_NO_BUNDLED` | `0` | `1` disables the bundled starter model |
+| `TIMESFM3_MAX_SERIES` | `64` | Series per request (targets + covariates) |
+| `TIMESFM3_MAX_CONTEXT` | `16384` | Context steps per request |
+| `PORT` | `8000` | Listen port |
+
+## Operating it
+
+- **Throughput.** Inference runs in a thread pool; the classical models take
+  milliseconds, the starter model tens of milliseconds per request on CPU.
+  Run several uvicorn workers behind a load balancer for more; the service
+  is stateless.
+- **GPU.** Build the image with `--build-arg TORCH_INDEX=https://download.pytorch.org/whl/cu124`
+  and pass `--device cuda`.
+- **Observability.** Scrape `/metrics`; `latency_ms` is also on every response.
+- **Safety limits.** Cap series count and context length with the env vars
+  above; long horizons decode in rolling chunks and cost linearly.
+
+## Python client
+
+```python
+from timesfm3.client import ForecastClient
+
+client = ForecastClient("http://localhost:8000", api_key=None)
+result = client.forecast([history], horizon=24, names=["sales"])
+result.point        # (1, 24)
+result.quantiles    # (1, 24, 9)
+client.backtest([history], context=256, horizon=24)
+```
+
+## Limits, stated plainly
+
+- The starter model is a small CPU-trained checkpoint, not the released
+  334 M-parameter TimesFM-3. It beats naive baselines on the held-out
+  benchmark above; it is not a substitute for a model trained on your
+  domain, which is exactly what the backtest endpoint is there to measure.
+- Classical-model bands are empirical, not conformal guarantees.
+- The volatility endpoint uses daily squared returns as the variance proxy;
+  with intraday data HAR would do better.
+- Nothing here is investment advice.
