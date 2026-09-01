@@ -167,6 +167,7 @@ so the table isolates forecast quality. Net of 10 bps, 1975–2026:
 | drift (trend extrapolation) | +2.19% | **+1.25** | markets trend |
 | AR(4) (mean reversion) | −2.78% | −1.44 | ...and punish mean-reversion at this horizon |
 | EWMA (flat forecast, placebo) | −0.03% | −0.87 | harness conjures no P&L from sizing alone |
+| TimesFM-3 `tiny` (1M params, 2000 CPU steps, §2.4) | −3.39% | −1.57 | an under-trained neural forecaster loses like a mean-reverter |
 
 The placebo row is the important one: a forecaster that predicts "no move"
 holds ~zero positions and earns ~zero — the pipeline has no hidden long
@@ -193,10 +194,18 @@ here follows the paper's recipe rather than the zero-shot shortcut:
    [Kelly-style position sizing](https://gwern.net/doc/statistics/decision/2006-thorp.pdf)
    needs and point forecasters cannot provide).
 
-Do not expect a tiny CPU-trained checkpoint to beat `drift`; the point of
-the harness is that when you train a real one (the `small`/`base` configs
-on a GPU, more data via additional `Instrument`s), the comparison against
-every classical baseline — same costs, same DM tests — is one command.
+We ran this loop end-to-end and report the result even though it is
+negative: the `tiny` config (1M parameters, 2000 CPU training steps on 16
+series) earns **Sharpe −1.57** through the harness — statistically a
+mean-reverter, clustering with AR(4) rather than `drift` in the §2.3
+table. That is the expected outcome at this scale, and it is the same
+shape of result Rahimikia et al. report for under-adapted foundation
+models against strong classical baselines. The measured value of the
+pipeline is that this failure is *quantified* under identical costs and
+statistics: when you train a real checkpoint (the `small`/`base` configs
+on a GPU, more assets via additional `Instrument`s, longer schedules),
+the comparison against every classical baseline is one command, and a
+positive result would mean something.
 
 ---
 
