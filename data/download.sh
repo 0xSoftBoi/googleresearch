@@ -15,3 +15,12 @@ fi
 wait
 [ -f raw/exchange_rate.txt.gz ] && gunzip -f raw/exchange_rate.txt.gz
 ls -la raw
+
+for f in electricity/electricity solar-energy/solar_AL traffic/traffic; do
+  n=$(basename "$f")
+  [ -f "raw/$n.txt" ] || { curl -sL -o "raw/$n.txt.gz" \
+    "https://raw.githubusercontent.com/laiguokun/multivariate-time-series-data/master/$f.txt.gz" \
+    && gunzip -f "raw/$n.txt.gz"; } &
+done
+wait
+ls -la raw

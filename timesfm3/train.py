@@ -70,17 +70,19 @@ def train(
     dataset: torch.utils.data.IterableDataset | None = None,
     val_dataset: torch.utils.data.IterableDataset | None = None,
     history: list | None = None,
+    model: TimesFM3Model | None = None,
 ) -> TimesFM3Model:
-    """Pre-trains a TimesFM-3 model; returns the final (not best) model.
+    """Pre-trains (or fine-tunes) a TimesFM-3 model; returns the final model.
 
     The best-validation checkpoint is saved to ``checkpoint_path``. When
     ``history`` is a list, dicts of logged train/val losses are appended to
-    it for plotting.
+    it for plotting. Pass ``model`` to continue training existing weights
+    (fine-tuning) instead of initializing fresh ones.
     """
     device = torch.device(
         device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
     )
-    model = TimesFM3Model(config).to(device)
+    model = (model or TimesFM3Model(config)).to(device)
     model.train()
     num_params = sum(p.numel() for p in model.parameters())
     print(f"TimesFM-3 model with {num_params / 1e6:.1f}M parameters on {device}.")

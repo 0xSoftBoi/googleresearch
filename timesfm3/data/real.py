@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import csv
 import dataclasses
+import os
 
 import numpy as np
 import torch
@@ -45,9 +46,22 @@ class RealSource:
 
 
 def load_csv_dataset(
-    path: str, name: str, periods: tuple[int, ...], skip_first_col: bool = True
+    path: str,
+    name: str,
+    periods: tuple[int, ...],
+    skip_first_col: bool = True,
+    cache: bool = True,
 ) -> RealSource:
-    """Loads a CSV/TSV with time as rows (optionally a leading date column)."""
+    """Loads a CSV/TSV with time as rows (optionally a leading date column).
+
+    Parsing large text files is slow, so by default the parsed array is
+    cached as ``<path>.npy`` and reused on subsequent loads.
+    """
+    cache_path = path + ".npy"
+    if cache and os.path.exists(cache_path):
+        return RealSource(
+            name=name, values=np.load(cache_path), periods=periods
+        )
     rows = []
     with open(path, newline="") as f:
         sample = f.read(4096)
@@ -64,6 +78,8 @@ def load_csv_dataset(
     data = np.asarray(
         [[float(x) for x in row[start:]] for row in rows], dtype=np.float32
     ).T
+    if cache:
+        np.save(cache_path, data)
     return RealSource(name=name, values=data, periods=periods)
 
 
@@ -106,6 +122,7 @@ class RealWindowDataset(torch.utils.data.IterableDataset):
         train_fraction: float = 0.8,
         calendar: bool = True,
         demote_prob: float = 0.2,
+        weight_power: float = 0.5,
         seed: int | None = None,
     ):
         super().__init__()
@@ -120,8 +137,12 @@ class RealWindowDataset(torch.utils.data.IterableDataset):
         self.calendar = calendar
         self.demote_prob = demote_prob
         self.seed = seed
-        # Sample sources proportionally to their usable length.
-        weights = np.asarray([s.num_steps * len(s.values) for s in sources], float)
+        # Sample sources by (points ** weight_power): the power tempers the
+        # distribution so huge datasets (862-series traffic) don't drown out
+        # small but distinct ones (7-series ETT, 8-series exchange).
+        weights = np.asarray(
+            [s.num_steps * len(s.values) for s in sources], float
+        ) ** weight_power
         self.source_probs = weights / weights.sum()
 
     def _sample(self, rng: np.random.Generator) -> dict[str, torch.Tensor]:
