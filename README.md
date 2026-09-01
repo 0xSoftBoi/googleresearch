@@ -89,8 +89,21 @@ with synthetic data, using three tricks from `timesfm3/data/real.py`:
 
 It then evaluates a claim the synthetic demos cannot make: **zero-shot on a
 held-out dataset** (ETTh2 is never seen in any form), with a calendar-
-covariate ablation and a quantile-calibration analysis. The executed
-notebook carries the results inline.
+covariate ablation and a quantile-calibration analysis. Results from the
+executed notebook (5.2M params, 25 min on CPU, scaled MAE):
+
+| Evaluation | model | last-value | seasonal-naive |
+|---|---|---|---|
+| ETTh1, in-domain, held-out time, + calendar | **0.66** | 1.10 | 0.73 |
+| ETTh1, in-domain, held-out time, no calendar | 0.81 | 1.10 | 0.73 |
+| ETTh2, **zero-shot dataset**, + calendar | **0.76** | 1.06 | 0.92 |
+| ETTh2, **zero-shot dataset**, no calendar | 0.87 | 1.06 | 0.92 |
+
+Unlike the synthetic-only checkpoint, the real-corpus model **beats
+seasonal-naive zero-shot on a dataset it has never seen**; calendar
+covariates through the known-future pathway contribute a further ~13%,
+and the 9 quantiles are calibrated to a mean absolute coverage gap of
+0.064 zero-shot.
 
 ## Pre-training (synthetic only)
 
