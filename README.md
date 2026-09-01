@@ -45,6 +45,10 @@ timesfm3/
   data/synthetic.py  # synthetic multivariate pre-training corpus generator
   data/real.py       # real-benchmark corpus (ETT, exchange rates) as RealSource
   data/polymarket.py # Polymarket prediction-market archive -> RealSource
+  data/markets.py    # FRED daily multi-asset universe (FX, equities, commodities, rates)
+  quant/volatility.py# realized variance, RiskMetrics EWMA, Corsi HAR-RV, QLIKE
+  quant/backtest.py  # vol-targeted backtester: costs, HAC Sharpe t-stats
+  quant/strategies.py# TSMOM (MOP 2012), Moreira-Muir overlay, forecaster-driven sizing
   train.py           # pre-training loop with held-out validation
 examples/
   forecast_example.py     # API demo: multivariate targets + covariates
@@ -53,10 +57,17 @@ examples/
   evaluate_ett.py         # zero-shot eval on the real ETTh1 benchmark
   train_polymarket.py     # train on Polymarket, writing a held-out market split
   evaluate_polymarket.py  # benchmark forecasters on the Polymarket archive
+  hedge_fund/             # real-market applications (see docs/HEDGE_FUND_APPLICATIONS.md)
+    trend_following.py    #   time-series momentum with costs, 16 assets, 1975-2026
+    volatility_forecasting.py #  HAR vs RiskMetrics horse race + vol-managed overlay
+    model_signal.py       #   any forecaster -> positions (Deep Momentum Networks harness)
+    pretrain_markets.py   #   pre-train TimesFM-3 on the FRED panel (temporal holdout)
 tests/
   test_polymarket.py      # archive-loader unit tests (pytest)
   test_baselines.py       # known-answer tests for the classical baselines
   test_evaluation.py      # known-answer tests for the comparison statistics
+  test_markets.py         # FRED parsing, bond-return approximation, alignment
+  test_quant.py           # backtester timing/costs, vol models, strategies
 ```
 
 ## Quick start
@@ -114,6 +125,38 @@ seasonal-naive zero-shot on a dataset it has never seen**; calendar
 covariates through the known-future pathway contribute a further ~13%,
 and the 9 quantiles are calibrated to a mean absolute coverage gap of
 0.064 zero-shot.
+
+## Hedge-fund applications (real market data)
+
+[`docs/HEDGE_FUND_APPLICATIONS.md`](docs/HEDGE_FUND_APPLICATIONS.md) maps what
+real systematic funds do with forecasters — Man AHL's Deep Momentum Networks
+lineage, AQR's time-series momentum, Moreira-Muir volatility management — onto
+this codebase, with citations and measured results. `timesfm3/data/markets.py`
+loads a 16-asset daily universe from FRED (no API key: 9 FX majors, equity
+indices, oil/gas, Treasury total-return proxies, histories to 1971), and
+`timesfm3/quant/` provides a cost-aware, vol-targeted backtester whose
+significance tests reuse this repo's Diebold-Mariano machinery. Headline
+measured results (details and honest caveats in the doc):
+
+- **Time-series momentum** (Moskowitz-Ooi-Pedersen 2012 construction),
+  1975–2026: gross Sharpe **1.13**, decaying to 0.65 at 10 bps costs, with
+  the literature's post-2010 trend decay clearly visible by decade.
+- **Volatility management** (Moreira-Muir 2017) on NASDAQ: Sharpe 0.49 →
+  **0.71** with no return forecast in the loop — sizing, not direction, is
+  where forecasters reliably pay.
+- **Forecaster-driven sizing harness**: trend extrapolation earns +1.25
+  Sharpe net, mean-reversion loses −1.44, and a flat-forecast placebo holds
+  zero positions — so model comparisons isolate forecast quality.
+- **Financial pre-training** of TimesFM-3 on this panel
+  (`examples/hedge_fund/pretrain_markets.py`), following the Rahimikia et
+  al. (2025) finding that financial pre-training, not zero-shot transfer,
+  is where foundation-model gains live.
+
+```bash
+python examples/hedge_fund/trend_following.py        # downloads FRED data, backtests
+python examples/hedge_fund/volatility_forecasting.py # HAR vs RiskMetrics, DM-tested
+python examples/hedge_fund/model_signal.py           # forecasters as trading signals
+```
 
 ## Prediction markets (Polymarket order-book archive)
 
