@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import torch
 
-_EPS = 1e-6
-
 
 class PerSeriesNormalizer:
     """Computes and applies per-series normalization statistics.
@@ -31,10 +29,13 @@ class PerSeriesNormalizer:
         count = observed.sum(dim=-1, keepdim=True).clamp(min=1.0)
         mean = (values * observed).sum(dim=-1, keepdim=True) / count
         var = ((values - mean) ** 2 * observed).sum(dim=-1, keepdim=True) / count
-        # Series with a single observed point (or constant series) fall back
-        # to unit scale so normalization stays invertible.
+        # Floor the scale relative to the series magnitude: a near-constant
+        # series (e.g. a flat exchange rate over one window) must not get a
+        # microscopic std that amplifies inputs and normalized errors by
+        # orders of magnitude.
         self.mean = mean  # (B, N, 1)
-        self.std = torch.sqrt(var).clamp(min=_EPS)  # (B, N, 1)
+        floor = 1e-3 * (1.0 + mean.abs())
+        self.std = torch.maximum(torch.sqrt(var), floor)  # (B, N, 1)
 
     def normalize(self, values: torch.Tensor) -> torch.Tensor:
         """Normalizes (B, N, T) values with the fitted statistics."""

@@ -77,8 +77,15 @@ def forecast_loss(
         weight = weight * variate_mask[:, :, None].float()
     denom = weight.sum().clamp(min=1.0)
 
+    # Huber on the normalized point error: quadratic in the normal regime,
+    # linear on outliers, so one degenerate window cannot dominate a batch.
     std = output.std  # (B, N, 1)
-    point_err = ((output.point.squeeze(-1) - actuals) / std) ** 2
+    point_err = torch.nn.functional.huber_loss(
+        output.point.squeeze(-1) / std,
+        actuals / std,
+        reduction="none",
+        delta=5.0,
+    )
     point_loss = (point_err * weight).sum() / denom
 
     q_loss = quantile_loss(
