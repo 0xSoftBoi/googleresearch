@@ -11,8 +11,13 @@
 # Hours are UTC, inclusive, formatted YYYY-MM-DDTHH. VERSION defaults to v3
 # (other eras: pmxt/v2, pmxt/v1, third-party/ag6).
 #
-# NOTE: one hour of V3 is roughly 1 GB. For programmatic loading (with the same
-# checksum verification) prefer timesfm3.data.polymarket.PolymarketArchive.
+# NOTE: one hour of V3 is roughly 1 GB, and large transfers do get truncated in
+# flight, so every file is checked against SHA256SUMS.txt. For programmatic use
+# prefer timesfm3.data.polymarket.PolymarketArchive, which additionally verifies
+# before caching, retries flaky transfers, and repairs a bad cached file.
+#
+# A mismatch is reported, not silently ignored: the archive has been observed to
+# serve at least one hour whose bytes its own manifest does not describe.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -55,11 +60,16 @@ verify() {  # verify RELPATH LOCALFILE
   actual=$(sha256sum "$file" | awk '{print $1}')
   if [ "$actual" != "$expected" ]; then
     echo "  ! CHECKSUM MISMATCH for $rel" >&2
-    return 1
+    echo "      expected $expected" >&2
+    echo "      actual   $actual" >&2
+    echo "      re-run to retry; if it repeats, the archive and its manifest disagree" >&2
+    bad=$((bad + 1))
+    return 0
   fi
   echo "  ok $rel"
 }
 
+bad=0
 s="$start_s"
 while [ "$s" -le "$end_s" ]; do
   day=$(date -u -d "@$s" +%Y-%m-%d 2>/dev/null || date -u -r "$s" +%Y-%m-%d)
@@ -78,4 +88,8 @@ while [ "$s" -le "$end_s" ]; do
   s=$((s + 3600))
 done
 
-echo "Done. Files in $OUT/"
+if [ "$bad" -gt 0 ]; then
+  echo "Done, but $bad file(s) failed verification. Files in $OUT/" >&2
+  exit 1
+fi
+echo "Done, all files verified. Files in $OUT/"

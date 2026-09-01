@@ -49,7 +49,9 @@ examples/
   plot_forecast.py        # point + q10-q90 band vs ground truth
   evaluate.py             # held-out synthetic eval vs naive baselines
   evaluate_ett.py         # zero-shot eval on the real ETTh1 benchmark
-  forecast_polymarket.py  # forecast Polymarket prices from the public archive
+  evaluate_polymarket.py  # benchmark forecasters on the Polymarket archive
+tests/
+  test_polymarket.py      # archive-loader unit tests (pytest)
 ```
 
 ## Quick start
@@ -108,53 +110,119 @@ covariates through the known-future pathway contribute a further ~13%,
 and the 9 quantiles are calibrated to a mean absolute coverage gap of
 0.064 zero-shot.
 
-## Prediction-market data (Polymarket archive)
+## Prediction markets (Polymarket order-book archive)
 
-`timesfm3/data/polymarket.py` turns the public **Polymarket order-book
-archive** at [archive.pendulumflow.com](https://archive.pendulumflow.com/)
-into TimesFM-3 inputs. Each Polymarket *outcome token* (`asset_id`) is a
-slowly-moving probability series in `[0, 1]`; the archive records every
-top-of-book and level update with microsecond arrival timestamps (one ~1 GB
-parquet file per hour, ~86 M rows). The loader:
+`timesfm3/data/polymarket.py` turns the public Polymarket order-book archive at
+[archive.pendulumflow.com](https://archive.pendulumflow.com/) into TimesFM-3
+inputs, and `examples/evaluate_polymarket.py` benchmarks forecasters on it.
 
-- **downloads** hourly parquet files and verifies them against the archive's
-  `SHA256SUMS.txt` (hours newer than the published manifest pass with a
-  warning), caching them under `data/polymarket/`;
-- **streams** each file row-group by row-group, keeping only the columns
-  needed to reconstruct the mid price, so a full hour is never materialised;
-- **resamples** the most active assets onto a regular grid by forward-filling
-  the mid price `(best_bid + best_ask) / 2` from the `best_bid_ask` and
-  `price_change` events; and
-- returns a `RealSource`, so it plugs straight into `RealWindowDataset` /
-  `MixedCorpus` next to the ETT and synthetic corpora.
+Every Polymarket market is binary: two complementary outcome tokens, one
+`condition_id`. The archive records each quote and fill with microsecond
+arrival timestamps (~1 GB and ~10^8 rows *per hour*), so each market carries
+its own microstructure. The loader streams those hours row-group by row-group
+and rebuilds, per outcome token and per grid cell:
+
+| channel | meaning |
+|---|---|
+| `mid` | `(best_bid + best_ask) / 2`, last quote in the cell, forward-filled |
+| `spread` | `best_ask - best_bid`, same treatment |
+| `ret`, `abs_ret` | first difference of `mid`, and its magnitude (realized-volatility proxy) |
+| `volume`, `trades` | summed fill size and fill count in the cell |
+| `signed_flow` | fills signed by taker side (BUY +, SELL −) |
+| `quotes` | book-update count in the cell |
 
 ```bash
-pip install -e .[polymarket]          # adds pyarrow
-# CLI download (checksum-verified) into data/polymarket/v3/:
-data/download_polymarket.sh 2026-08-28T00 2026-08-28T02
+pip install -e .[polymarket]                              # adds pyarrow
+data/download_polymarket.sh 2026-08-29T03 2026-08-29T15   # checksum-verified
+python examples/evaluate_polymarket.py --start 2026-08-29T03 --end 2026-08-29T15
 ```
 
 ```python
 import datetime as dt
-from timesfm3.data.polymarket import load_polymarket_source
+from timesfm3.data.polymarket import load_polymarket_sources
 
-hour = dt.datetime(2026, 8, 28, 0, tzinfo=dt.timezone.utc)
-source = load_polymarket_source(hour, hour, num_assets=32, freq_seconds=5.0)
-# source.values -> (num_assets, steps) mid prices; mix into RealWindowDataset.
+hour = dt.datetime(2026, 8, 29, 3, tzinfo=dt.timezone.utc)
+sources = load_polymarket_sources(hour, hour, num_markets=64)  # -> RealSource list
 ```
 
-The `examples/forecast_polymarket.py` script runs the whole path end to end —
-download → grid → multivariate forecast — and reports scaled MAE against a
-last-value (random-walk) baseline, which is strong for near-efficient
-prediction-market prices:
+### What is actually forecastable here
 
-```bash
-# Untrained plumbing demo (forecasts not meaningful, baseline is):
-python examples/forecast_polymarket.py --start 2026-08-28T00 --end 2026-08-28T02
-# With a trained checkpoint and a plot of one asset:
-python examples/forecast_polymarket.py --start 2026-08-28T00 --end 2026-08-28T05 \
-    --checkpoint timesfm3_checkpoint.pt --output polymarket_forecast.png
-```
+Measured on 13 contiguous checksum-verified hours (2026-08-29 03:00–15:59 UTC),
+163 continuously quoted markets, 15 s grid. Lag-1 autocorrelation of each
+channel, and which trivial predictor wins over a 16-minute horizon:
+
+| channel | lag-1 AC | better baseline |
+|---|---|---|
+| `mid` | 0.982 | last-value |
+| `spread` | 0.910 | last-value |
+| **`ret`** | **-0.009** | context-mean |
+| `abs_ret` | 0.204 | context-mean |
+| `quotes` | 0.812 | last-value |
+| `trades` | 0.568 | last-value |
+| `volume` | 0.332 | last-value |
+
+Price *levels* are near-perfect random walks (AC 0.982) and their **returns
+carry essentially no autocorrelation (-0.009)** — which is what an efficient
+market should look like. Book *activity* is a different story: quote intensity
+is strongly autocorrelated, and that is where a sequence model has something to
+learn.
+
+Two further properties of this data shape any honest evaluation:
+
+- **Most windows are frozen.** Over a 16-minute horizon, 71–90% of windows have
+  a target that never moves at all. There last-value is exactly right by
+  construction and no forecaster can beat it, so those windows are reported
+  separately rather than being allowed to dominate an average.
+- **Scaled MAE is unusable.** The repo's other benchmarks divide MAE by the
+  context standard deviation; here contexts are frequently *perfectly flat*, so
+  that denominator collapses and produces meaningless six-figure "errors". The
+  Polymarket benchmark reports MAE in native units plus a ratio to the better
+  baseline.
+
+### Benchmark
+
+A 1M-parameter (`tiny`) model, trained for 3.6 minutes on CPU on the 13-hour
+window, forecasting `mid, spread, abs_ret, quotes` jointly. Two-way held out:
+the last 20% of the time axis is never trained on, and 25% of markets are
+excluded from training entirely. Numbers are model MAE ÷ best-baseline MAE
+over **active** windows (frozen windows excluded); below 1.00 the model wins.
+
+| channel | train markets | zero-shot markets |
+|---|---|---|
+| `mid` | 1.060 | 1.039 |
+| `spread` | 0.997 | 1.008 |
+| `abs_ret` | 1.128 | 1.441 |
+| **`quotes`** | **0.931** | **0.918** |
+
+A second, independent run over `mid, quotes, trades, volume` agrees on the two
+findings that matter: `quotes` 0.910 / 0.975 and `mid` 1.047 / 1.102.
+
+So: **the model does not beat a random walk on price, and beats both baselines
+on book activity, including zero-shot on markets it never saw.** The first half
+is the expected result, not a failure — a small model trained on 13 hours of one
+day should not out-predict a liquid prediction market. The second half is real
+signal: quote intensity has learnable temporal structure that neither trivial
+baseline captures. Caveats worth keeping in view: this is one day of data, a
+1M-parameter model, and the per-window win rate on `quotes` is only ~0.37 — the
+model wins on aggregate error because it wins on the *active* minority of
+windows, not because it wins most windows.
+
+### Data integrity
+
+Hourly files are ~1 GB and large transfers do get truncated in flight, so
+`PolymarketArchive` verifies each download against the archive's
+`SHA256SUMS.txt` *before* promoting it into the cache, repairs a cached file
+that fails its checksum, and distinguishes two failures that need different
+responses: downloads that disagree with *each other* (flaky transfer — retry
+helps) from downloads that agree with each other but not with the manifest
+(the archive is serving bytes its own manifest does not describe — retrying
+cannot help; pass `on_mismatch="warn"` to accept them).
+
+That distinction is not hypothetical. Auditing the 16 hours originally fetched
+for this benchmark, 15 verified and one (`2026-08-29T02`) reproducibly hashed to
+a value the published manifest does not list, across four independent
+full-length downloads. The benchmark above therefore uses the contiguous
+verified block 03:00–15:59 rather than forward-filling across a suspect hour.
 
 ## Pre-training (synthetic only)
 
