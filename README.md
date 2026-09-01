@@ -41,12 +41,15 @@ timesfm3/
   forecaster.py      # numpy-in / numpy-out API: rolling decode, NaN handling
   loss.py            # normalized quantile (pinball) + point losses
   data/synthetic.py  # synthetic multivariate pre-training corpus generator
+  data/real.py       # real-benchmark corpus (ETT, exchange rates) as RealSource
+  data/polymarket.py # Polymarket prediction-market archive -> RealSource
   train.py           # pre-training loop with held-out validation
 examples/
-  forecast_example.py  # API demo: multivariate targets + covariates
-  plot_forecast.py     # point + q10-q90 band vs ground truth
-  evaluate.py          # held-out synthetic eval vs naive baselines
-  evaluate_ett.py      # zero-shot eval on the real ETTh1 benchmark
+  forecast_example.py     # API demo: multivariate targets + covariates
+  plot_forecast.py        # point + q10-q90 band vs ground truth
+  evaluate.py             # held-out synthetic eval vs naive baselines
+  evaluate_ett.py         # zero-shot eval on the real ETTh1 benchmark
+  forecast_polymarket.py  # forecast Polymarket prices from the public archive
 ```
 
 ## Quick start
@@ -104,6 +107,54 @@ seasonal-naive zero-shot on a dataset it has never seen**; calendar
 covariates through the known-future pathway contribute a further ~13%,
 and the 9 quantiles are calibrated to a mean absolute coverage gap of
 0.064 zero-shot.
+
+## Prediction-market data (Polymarket archive)
+
+`timesfm3/data/polymarket.py` turns the public **Polymarket order-book
+archive** at [archive.pendulumflow.com](https://archive.pendulumflow.com/)
+into TimesFM-3 inputs. Each Polymarket *outcome token* (`asset_id`) is a
+slowly-moving probability series in `[0, 1]`; the archive records every
+top-of-book and level update with microsecond arrival timestamps (one ~1 GB
+parquet file per hour, ~86 M rows). The loader:
+
+- **downloads** hourly parquet files and verifies them against the archive's
+  `SHA256SUMS.txt` (hours newer than the published manifest pass with a
+  warning), caching them under `data/polymarket/`;
+- **streams** each file row-group by row-group, keeping only the columns
+  needed to reconstruct the mid price, so a full hour is never materialised;
+- **resamples** the most active assets onto a regular grid by forward-filling
+  the mid price `(best_bid + best_ask) / 2` from the `best_bid_ask` and
+  `price_change` events; and
+- returns a `RealSource`, so it plugs straight into `RealWindowDataset` /
+  `MixedCorpus` next to the ETT and synthetic corpora.
+
+```bash
+pip install -e .[polymarket]          # adds pyarrow
+# CLI download (checksum-verified) into data/polymarket/v3/:
+data/download_polymarket.sh 2026-08-28T00 2026-08-28T02
+```
+
+```python
+import datetime as dt
+from timesfm3.data.polymarket import load_polymarket_source
+
+hour = dt.datetime(2026, 8, 28, 0, tzinfo=dt.timezone.utc)
+source = load_polymarket_source(hour, hour, num_assets=32, freq_seconds=5.0)
+# source.values -> (num_assets, steps) mid prices; mix into RealWindowDataset.
+```
+
+The `examples/forecast_polymarket.py` script runs the whole path end to end —
+download → grid → multivariate forecast — and reports scaled MAE against a
+last-value (random-walk) baseline, which is strong for near-efficient
+prediction-market prices:
+
+```bash
+# Untrained plumbing demo (forecasts not meaningful, baseline is):
+python examples/forecast_polymarket.py --start 2026-08-28T00 --end 2026-08-28T02
+# With a trained checkpoint and a plot of one asset:
+python examples/forecast_polymarket.py --start 2026-08-28T00 --end 2026-08-28T05 \
+    --checkpoint timesfm3_checkpoint.pt --output polymarket_forecast.png
+```
 
 ## Pre-training (synthetic only)
 
