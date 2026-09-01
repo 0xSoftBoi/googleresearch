@@ -40,13 +40,23 @@ timesfm3/
   model.py           # TimesFM3Model: contiguous patch masking + quantile head
   forecaster.py      # numpy-in / numpy-out API: rolling decode, NaN handling
   loss.py            # normalized quantile (pinball) + point losses
+  baselines.py       # classical forecasters: last-value, drift, EWMA, AR(p)
+  evaluation.py      # Diebold-Mariano (HAC), cluster bootstrap, Holm
   data/synthetic.py  # synthetic multivariate pre-training corpus generator
+  data/real.py       # real-benchmark corpus (ETT, exchange rates) as RealSource
+  data/polymarket.py # Polymarket prediction-market archive -> RealSource
   train.py           # pre-training loop with held-out validation
 examples/
-  forecast_example.py  # API demo: multivariate targets + covariates
-  plot_forecast.py     # point + q10-q90 band vs ground truth
-  evaluate.py          # held-out synthetic eval vs naive baselines
-  evaluate_ett.py      # zero-shot eval on the real ETTh1 benchmark
+  forecast_example.py     # API demo: multivariate targets + covariates
+  plot_forecast.py        # point + q10-q90 band vs ground truth
+  evaluate.py             # held-out synthetic eval vs naive baselines
+  evaluate_ett.py         # zero-shot eval on the real ETTh1 benchmark
+  train_polymarket.py     # train on Polymarket, writing a held-out market split
+  evaluate_polymarket.py  # benchmark forecasters on the Polymarket archive
+tests/
+  test_polymarket.py      # archive-loader unit tests (pytest)
+  test_baselines.py       # known-answer tests for the classical baselines
+  test_evaluation.py      # known-answer tests for the comparison statistics
 ```
 
 ## Quick start
@@ -104,6 +114,137 @@ seasonal-naive zero-shot on a dataset it has never seen**; calendar
 covariates through the known-future pathway contribute a further ~13%,
 and the 9 quantiles are calibrated to a mean absolute coverage gap of
 0.064 zero-shot.
+
+## Prediction markets (Polymarket order-book archive)
+
+`timesfm3/data/polymarket.py` turns the public Polymarket order-book archive at
+[archive.pendulumflow.com](https://archive.pendulumflow.com/) into TimesFM-3
+inputs; `examples/train_polymarket.py` and `examples/evaluate_polymarket.py`
+train and benchmark on it.
+
+Every Polymarket market is binary: two outcome tokens, one `condition_id`. In
+this archive the two mid prices are *exactly* complementary (`p_yes + p_no == 1`
+to the tick, zero variance), so only one outcome carries information and the
+loader uses one per market. The archive records every quote and fill with
+microsecond arrival timestamps (~1 GB and ~10^8 rows *per hour*); the loader
+streams those hours row-group by row-group and rebuilds, per grid cell:
+
+| channel | meaning |
+|---|---|
+| `mid` | `(best_bid + best_ask) / 2`, last quote in the cell, forward-filled |
+| `spread` | `best_ask - best_bid`, same treatment |
+| `ret`, `abs_ret` | first difference of `mid`, and its magnitude (realized-volatility proxy) |
+| `volume`, `trades` | summed fill size and fill count in the cell |
+| `signed_flow` | fills signed by taker side (BUY +, SELL −) |
+| `quotes` | book-update count in the cell |
+
+```bash
+pip install -e .[polymarket]                              # adds pyarrow
+data/download_polymarket.sh 2026-08-28T08 2026-08-28T15   # checksum-verified
+python examples/train_polymarket.py --panels panels.pkl --checkpoint pm.pt
+python examples/evaluate_polymarket.py --panels test_panels.pkl --checkpoint pm.pt
+```
+
+### What is forecastable
+
+Lag-1 autocorrelation over 13 verified hours, 163 continuously quoted markets,
+15 s grid:
+
+| channel | `mid` | `spread` | `ret` | `abs_ret` | `quotes` | `trades` | `volume` |
+|---|---|---|---|---|---|---|---|
+| lag-1 AC | 0.982 | 0.910 | **−0.009** | 0.204 | 0.812 | 0.568 | 0.332 |
+
+Price *levels* are near-perfect random walks and their **returns carry
+essentially no autocorrelation** — what an efficient market should look like.
+Book *activity* is strongly autocorrelated, and that is where a sequence model
+has something to learn.
+
+### Evaluation protocol
+
+Three properties of this data break naive benchmarking, so the harness handles
+each explicitly:
+
+- **Most horizons are frozen.** 44–90% of windows have a target that never
+  moves; there last-value is exactly right by construction and nothing can beat
+  it. Frozen and active windows are scored separately.
+- **Scaled MAE is unusable.** Dividing by context standard deviation — what
+  this repo's other benchmarks do — collapses on those flat contexts and yields
+  meaningless six-figure "errors". Losses are reported in native units.
+- **Windows are not independent.** Sliding windows share context and windows
+  from one market share its regime. Windows are taken **non-overlapping**,
+  significance uses a HAC-corrected [Diebold-Mariano](timesfm3/evaluation.py)
+  test, confidence intervals come from a bootstrap resampling whole *markets*,
+  and p-values are Holm-corrected across forecasters. Effective sample size is
+  reported alongside nominal n.
+
+Forecasters are scored against a panel of classical baselines
+(`timesfm3/baselines.py`): last-value, context-mean, drift, EWMA with its
+smoothing constant fit inside the context, and AR(1)/AR(4) fit by OLS on the
+context. A foundation model that cannot beat a fitted AR(1) is not interesting.
+
+### Benchmark
+
+**Trained on 2026-08-28 08:00–15:59, evaluated on 2026-08-29 03:00–15:59** — a
+strictly later day, with the 2 overlapping markets removed from training, so
+all 163 test markets are unseen. 1M-parameter (`tiny`) model, 3.4 min on CPU.
+Active windows, non-overlapping, MAE ratio against last-value (< 1 is better);
+`*` = significant at 5% after Holm correction.
+
+| channel | TimesFM-3 | EWMA | AR(1) | ctx-mean | n (effective) |
+|---|---|---|---|---|---|
+| `mid` | 1.074 * worse | 1.008 | 1.160 * worse | 1.876 * worse | 180 (158) |
+| `spread` | 1.013 | 0.996 | 1.005 | 1.079 | 158 (147) |
+| `abs_ret` | 0.811 | 0.844 | 0.738 | 0.739 | 180 (180) |
+| **`quotes`** | **0.704 \*** [0.574, 0.853] | 0.901 | 0.871 | 0.870 | 429 (282) |
+
+**Nothing beats a random walk on price.** TimesFM-3 is significantly *worse*
+than last-value on `mid`, as is AR(1); EWMA ties it. On `spread` every
+forecaster is statistically indistinguishable from last-value. On `abs_ret`
+nothing survives multiple-comparison correction.
+
+**On quote intensity the model wins, and the win is not something a linear
+model reproduces** — EWMA, AR(1) and context-mean all sit near 0.87–0.90 and
+none reach significance, while TimesFM-3 reaches 0.704.
+
+Robustness of that one positive result. The seed, comparison-space and horizon
+rows re-run the same cross-day protocol with `--channels mid,quotes`, which is
+why seed 0 reads 0.731 there and 0.704 in the four-channel table above — the
+joint forecast changes with the channel set, the conclusion does not:
+
+| check | result |
+|---|---|
+| 3 independent training seeds | 0.725 / 0.728 / 0.731 (all significant) |
+| scored in log1p space instead of native counts | 0.866 / 0.870 / 0.873 (all significant) |
+| horizon 32 / 64 / 128 steps (8 / 16 / 32 min) | 0.841 (n.s.) / 0.731 \* / 0.655 \* |
+| leak check: same-day eval including training data | 0.689 — essentially unchanged |
+
+The edge **grows with horizon**, which is the mechanically sensible direction:
+at 8 minutes quote intensity persists and last-value is hard to beat; over
+longer horizons the mean-reverting structure the model has learned starts to
+pay. What this buys is a liquidity/activity signal useful for execution
+scheduling — not alpha. The price result says plainly that there is none to be
+had here.
+
+Caveats: two days of data from one archive, a 1M-parameter model, and a
+per-window win rate on `quotes` well below half — the model wins on aggregate
+error because it wins on the active minority of windows, not because it wins
+most of them.
+
+### Data integrity
+
+Hourly files are ~1 GB and large transfers do get truncated in flight, so
+`PolymarketArchive` verifies each download against `SHA256SUMS.txt` *before*
+promoting it into the cache, repairs a cached file that fails its checksum, and
+distinguishes two failures needing different responses: downloads that disagree
+with *each other* (flaky transfer — retry helps) from downloads that agree with
+each other but not with the manifest (the archive is serving bytes its own
+manifest does not describe — retrying cannot help; `on_mismatch="warn"` accepts
+them).
+
+That distinction is not hypothetical. Of 24 hours audited, 23 verified and one
+(`2026-08-29T02`) reproducibly hashed to a value the manifest does not list,
+across four independent full-length downloads. The benchmark uses contiguous
+verified blocks rather than forward-filling across a suspect hour.
 
 ## Pre-training (synthetic only)
 

@@ -16,6 +16,8 @@ dependencies = [
 
 [project.optional-dependencies]
 examples = ["matplotlib>=3.7"]
+polymarket = ["pyarrow>=14"]
+test = ["pytest>=7", "pyarrow>=14"]
 
 [tool.setuptools.packages.find]
 include = ["timesfm3*"]
