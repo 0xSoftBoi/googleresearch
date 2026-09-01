@@ -76,34 +76,42 @@ result.quantiles  # (num_targets, horizon, 9) q10 ... q90
 ## Real-data pre-training (notebook)
 
 [`notebooks/timesfm3_real_data.ipynb`](notebooks/timesfm3_real_data.ipynb)
-is the productive-training path: it pre-trains on a **real corpus** (ETTh1,
-ETTm1, ETTm2, exchange rates — `bash data/download.sh` fetches them) mixed
-with synthetic data, using three tricks from `timesfm3/data/real.py`:
+is the productive-training path: it pre-trains on a **31.9M-point real
+corpus** — electricity (321 series), traffic (862 series), solar (137
+series), ETTh1/ETTm1/ETTm2 and exchange rates, spanning 10-minute to
+daily frequencies (`bash data/download.sh` fetches them) — mixed with
+synthetic data, using the tricks from `timesfm3/data/real.py`:
 
 - **multi-frequency augmentation** — random-stride subsampling so one
   dataset teaches several sampling rates,
 - **calendar covariates** — day/week sin/cos phases fed through the
   past-future covariate pathway, known arbitrarily far into the future,
 - **role randomization** — real channels randomly demoted to past-only
-  covariates.
+  covariates,
+- **tempered source weighting** — sources sampled ∝ points^0.5 so
+  862-series traffic doesn't drown out 7-series ETT.
 
-It then evaluates a claim the synthetic demos cannot make: **zero-shot on a
-held-out dataset** (ETTh2 is never seen in any form), with a calendar-
-covariate ablation and a quantile-calibration analysis. Results from the
-executed notebook (5.2M params, 25 min on CPU, scaled MAE):
+It then covers the full foundation-model workflow: **zero-shot on a
+held-out dataset** (ETTh2 is never seen in any form), **few-shot
+fine-tuning** on the target's own history, a calendar-covariate ablation
+and a quantile-calibration analysis. Results from the executed notebook
+(5.2M params, 48 min pre-training on CPU, scaled MAE):
 
 | Evaluation | model | last-value | seasonal-naive |
 |---|---|---|---|
-| ETTh1, in-domain, held-out time, + calendar | **0.66** | 1.10 | 0.73 |
-| ETTh1, in-domain, held-out time, no calendar | 0.81 | 1.10 | 0.73 |
+| ETTh1, in-domain, held-out time, + calendar | **0.67** | 1.10 | 0.73 |
+| ETTh1, in-domain, held-out time, no calendar | 0.77 | 1.10 | 0.73 |
 | ETTh2, **zero-shot dataset**, + calendar | **0.76** | 1.06 | 0.92 |
-| ETTh2, **zero-shot dataset**, no calendar | 0.87 | 1.06 | 0.92 |
+| ETTh2, **zero-shot dataset**, no calendar | 0.88 | 1.06 | 0.92 |
+| ETTh2, fine-tuned 600 steps on its own history | **0.75** | 1.06 | 0.92 |
 
-Unlike the synthetic-only checkpoint, the real-corpus model **beats
-seasonal-naive zero-shot on a dataset it has never seen**; calendar
-covariates through the known-future pathway contribute a further ~13%,
-and the 9 quantiles are calibrated to a mean absolute coverage gap of
-0.064 zero-shot.
+The model **beats seasonal-naive zero-shot on a dataset it has never
+seen**; calendar covariates through the known-future pathway contribute
+~13%; fine-tuning mainly improves calibration (mean quantile-coverage
+gap 0.074 → 0.061). Scaling the corpus 30× left aggregate zero-shot MAE
+flat — at 5.2M parameters, capacity, not data, is now the binding
+constraint, which is exactly the regime where the 334M `base()` config
+(which this pipeline takes unchanged) earns its size.
 
 ## Pre-training (synthetic only)
 
