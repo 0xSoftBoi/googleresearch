@@ -73,7 +73,26 @@ result.point      # (num_targets, horizon) point forecast
 result.quantiles  # (num_targets, horizon, 9) q10 ... q90
 ```
 
-## Pre-training
+## Real-data pre-training (notebook)
+
+[`notebooks/timesfm3_real_data.ipynb`](notebooks/timesfm3_real_data.ipynb)
+is the productive-training path: it pre-trains on a **real corpus** (ETTh1,
+ETTm1, ETTm2, exchange rates — `bash data/download.sh` fetches them) mixed
+with synthetic data, using three tricks from `timesfm3/data/real.py`:
+
+- **multi-frequency augmentation** — random-stride subsampling so one
+  dataset teaches several sampling rates,
+- **calendar covariates** — day/week sin/cos phases fed through the
+  past-future covariate pathway, known arbitrarily far into the future,
+- **role randomization** — real channels randomly demoted to past-only
+  covariates.
+
+It then evaluates a claim the synthetic demos cannot make: **zero-shot on a
+held-out dataset** (ETTh2 is never seen in any form), with a calendar-
+covariate ablation and a quantile-calibration analysis. The executed
+notebook carries the results inline.
+
+## Pre-training (synthetic only)
 
 The released model was pre-trained on a real-world plus synthetic corpus of
 more than 1 trillion time points. This repo ships the training objective

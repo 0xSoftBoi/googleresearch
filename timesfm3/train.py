@@ -67,7 +67,16 @@ def train(
     val_batches: int = 4,
     num_workers: int = 0,
     checkpoint_path: str = "timesfm3_checkpoint.pt",
+    dataset: torch.utils.data.IterableDataset | None = None,
+    val_dataset: torch.utils.data.IterableDataset | None = None,
+    history: list | None = None,
 ) -> TimesFM3Model:
+    """Pre-trains a TimesFM-3 model; returns the final (not best) model.
+
+    The best-validation checkpoint is saved to ``checkpoint_path``. When
+    ``history`` is a list, dicts of logged train/val losses are appended to
+    it for plotting.
+    """
     device = torch.device(
         device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
     )
@@ -76,7 +85,7 @@ def train(
     num_params = sum(p.numel() for p in model.parameters())
     print(f"TimesFM-3 model with {num_params / 1e6:.1f}M parameters on {device}.")
 
-    corpus = SyntheticMultivariateCorpus(
+    corpus = dataset or SyntheticMultivariateCorpus(
         config,
         context_patches=context_patches,
         horizon_patches=horizon_patches,
@@ -90,7 +99,7 @@ def train(
     )
 
     # Fixed held-out validation set (a seed the training stream never uses).
-    val_corpus = SyntheticMultivariateCorpus(
+    val_corpus = val_dataset or SyntheticMultivariateCorpus(
         config,
         context_patches=context_patches,
         horizon_patches=horizon_patches,
@@ -138,9 +147,13 @@ def train(
         running += loss.item()
         if step % log_every == 0:
             print(f"step {step:>7d}  lr {lr:.2e}  loss {running / log_every:.4f}")
+            if history is not None:
+                history.append({"step": step, "train_loss": running / log_every})
             running = 0.0
         if step % val_every == 0 or step >= steps:
             val = validate()
+            if history is not None:
+                history.append({"step": step, "val_loss": val})
             marker = ""
             if val < best_val:
                 best_val = val
