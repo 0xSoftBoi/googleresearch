@@ -146,3 +146,56 @@ class Health(BaseModel):
     models: int
     default_model: str | None
     device: str
+
+
+class AnomalyRequest(BaseModel):
+    """Walk-forward anomaly scoring of whole series."""
+
+    series: list[Series] = Field(min_length=1)
+    model: str | None = None
+    context: int = Field(default=96, ge=8, le=16384, description="History used before each block.")
+    block: int = Field(default=24, ge=1, le=512, description="Steps forecast per origin.")
+    threshold: float = Field(default=2.0, gt=0, description="Score above which a point is flagged (1 = 80% band edge).")
+    timestamps: list[str] | None = None
+    include_scores: bool = Field(default=False, description="Return the full per-step score/expected/band arrays.")
+
+
+class Anomaly(BaseModel):
+    index: int
+    timestamp: str | None = None
+    value: float
+    expected: float
+    lower: float
+    upper: float
+    score: float
+    direction: Literal["high", "low"]
+
+
+class SeriesAnomalies(BaseModel):
+    name: str
+    n_scored: int
+    n_flagged: int
+    anomalies: list[Anomaly]
+    scores: list[float | None] | None = None
+    expected: list[float | None] | None = None
+    lower: list[float | None] | None = None
+    upper: list[float | None] | None = None
+
+
+class AnomalyResponse(BaseModel):
+    model: str
+    context: int
+    block: int
+    threshold: float
+    series: list[SeriesAnomalies]
+    latency_ms: float
+
+
+class Usage(BaseModel):
+    name: str
+    plan: str
+    month: str
+    points_used: int
+    requests: int
+    monthly_quota: int | None
+    points_remaining: int | None

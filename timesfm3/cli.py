@@ -4,6 +4,8 @@
     timesfm3 forecast data.csv --horizon 24 [--model NAME] [--output out.csv]
     timesfm3 backtest data.csv --context 256 --horizon 24 [--models a,b]
     timesfm3 models [--checkpoint PATH ...]
+    timesfm3 anomalies data.csv [--context 96] [--threshold 2] [--model NAME]
+    timesfm3 finetune data.csv --out my-model.pt [--from CKPT] [--steps 300]
     timesfm3 pack train_ckpt.pt packaged.pt --name my-model
     timesfm3 train --config small --steps 6000 ...     (see timesfm3.train)
 """
@@ -11,6 +13,7 @@
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import os
 import sys
@@ -138,6 +141,90 @@ def cmd_backtest(args) -> int:
     return 0
 
 
+def _print_backtest(report: dict, title: str) -> None:
+    print(title)
+    print(f"{'model':16s} {'mean mae':>11s} {'ratio':>7s} {'95% CI':>17s} "
+          f"{'p (Holm)':>9s} {'win':>5s} {'n (eff)':>10s}  verdict")
+    for s in report["scores"]:
+        ci = f"[{s['ci_low']:.3f}, {s['ci_high']:.3f}]" if s["ci_low"] is not None else "-"
+        p = f"{s['p_adjusted']:.3f}" if s["p_adjusted"] is not None else "-"
+        win = f"{100 * s['win_rate']:.0f}%" if s["verdict"] != "reference" else "-"
+        print(f"{s['model']:16s} {s['mean_loss']:11.4g} {s['ratio']:7.3f} {ci:>17s} {p:>9s} "
+              f"{win:>5s} {s['n']:4d} ({s['n_effective']:4.0f})  {s['verdict']}")
+
+
+def cmd_anomalies(args) -> int:
+    from .anomaly import detect_anomalies
+    from .tabular import read_series_csv
+
+    table = read_series_csv(args.input)
+    registry = _registry(args)
+    entry = registry.get(args.model)
+    results = []
+    for name, x in zip(table.names, table.values):
+        rep = detect_anomalies(entry, x, args.context, args.block, args.threshold)
+        results.append((name, rep, rep.anomalies(x, table.timestamps)))
+    if args.json:
+        print(json.dumps({
+            "model": entry.name, "context": args.context, "block": args.block,
+            "threshold": args.threshold,
+            "series": [{"name": n, "n_scored": int(np.isfinite(r.scores).sum()),
+                        "n_flagged": int(r.flagged.sum()), "anomalies": a}
+                       for n, r, a in results],
+        }, indent=2))
+        return 0
+    print(f"{args.input}: model {entry.name}, context {args.context}, block {args.block}, "
+          f"threshold {args.threshold} (1.0 = 80% band edge)")
+    for name, rep, anomalies in results:
+        print(f"\n{name}: {len(anomalies)} anomalies in {int(np.isfinite(rep.scores).sum())} scored steps")
+        for a in anomalies:
+            when = a.get("timestamp", f"#{a['index']}")
+            print(f"  {when:>20s}  value {a['value']:>10.4g}  expected {a['expected']:>10.4g} "
+                  f"[{a['lower']:.4g}, {a['upper']:.4g}]  score {a['score']:.2f} {a['direction']}")
+    return 0
+
+
+def cmd_finetune(args) -> int:
+    from .finetune import finetune
+    from .serving.registry import ASSET_DIR
+    from .tabular import read_series_csv
+
+    base = args.base
+    if base is None:
+        bundled = sorted(glob.glob(os.path.join(ASSET_DIR, "*.pt")))
+        if not bundled:
+            print("error: no bundled checkpoint; pass --from PATH", file=sys.stderr)
+            return 1
+        base = bundled[0]
+    table = read_series_csv(args.input)
+    periods = tuple(int(p) for p in args.periods.split(",")) if args.periods else ()
+    report = finetune(
+        table.values, base, args.out, name=args.name, steps=args.steps,
+        batch_size=args.batch_size, lr=args.lr, context_patches=args.context_patches,
+        horizon_patches=args.horizon_patches, train_fraction=args.train_fraction,
+        periods=periods, synthetic_fraction=args.synthetic, device=args.device,
+        evaluate=not args.no_eval, eval_windows=args.windows,
+    )
+    print(f"\nfine-tuned {os.path.basename(base)} -> {report.output} "
+          f"({report.steps} steps, {report.minutes:.1f} min, best val loss {report.best_val_loss:.4f})")
+    if report.evaluation:
+        if "error" in report.evaluation:
+            print(f"held-out evaluation skipped: {report.evaluation['error']}")
+        else:
+            ev = report.evaluation
+            _print_backtest(
+                ev, f"held-out tail ({(1 - args.train_fraction):.0%} of the data, "
+                    f"{ev['windows_per_series']} windows/series, context {ev['context']}, "
+                    f"horizon {ev['horizon']}): MAE ratio vs last-value")
+            mine = next(s for s in ev["scores"] if s["model"] == args.name)
+            base_row = next(s for s in ev["scores"] if s["model"] == "base")
+            print(f"\nfine-tuned vs base: MAE {mine['mean_loss']:.4g} vs {base_row['mean_loss']:.4g} "
+                  f"({(mine['mean_loss'] / base_row['mean_loss'] - 1) * 100:+.1f}%); "
+                  f"verdict vs last-value: {mine['verdict']}")
+            print(f"serve it:  timesfm3 serve --checkpoint {args.name}={report.output}")
+    return 0
+
+
 def cmd_pack(args) -> int:
     from .checkpoint import package_checkpoint
 
@@ -198,6 +285,34 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--json", action="store_true")
     _add_model_args(b)
     b.set_defaults(func=cmd_backtest)
+
+    a = sub.add_parser("anomalies", help="Flag anomalous points in every column of a CSV.")
+    a.add_argument("input")
+    a.add_argument("--model", "-m", default=None)
+    a.add_argument("--context", type=int, default=96)
+    a.add_argument("--block", type=int, default=24)
+    a.add_argument("--threshold", type=float, default=2.0)
+    a.add_argument("--json", action="store_true")
+    _add_model_args(a)
+    a.set_defaults(func=cmd_anomalies)
+
+    ft = sub.add_parser("finetune", help="Fine-tune a checkpoint on a CSV and evaluate on its tail.")
+    ft.add_argument("input")
+    ft.add_argument("--out", "-o", required=True, help="Packaged checkpoint to write.")
+    ft.add_argument("--from", dest="base", default=None, help="Base checkpoint (default: bundled).")
+    ft.add_argument("--name", default="finetuned")
+    ft.add_argument("--steps", type=int, default=300)
+    ft.add_argument("--batch-size", type=int, default=16)
+    ft.add_argument("--lr", type=float, default=1e-4)
+    ft.add_argument("--context-patches", type=int, default=8)
+    ft.add_argument("--horizon-patches", type=int, default=2)
+    ft.add_argument("--train-fraction", type=float, default=0.8)
+    ft.add_argument("--periods", default=None, help="Calendar periods in steps, e.g. 24,168.")
+    ft.add_argument("--synthetic", type=float, default=0.2, help="Fraction of synthetic windows mixed in.")
+    ft.add_argument("--windows", type=int, default=20, help="Held-out evaluation windows per series.")
+    ft.add_argument("--no-eval", action="store_true")
+    ft.add_argument("--device", default=None)
+    ft.set_defaults(func=cmd_finetune)
 
     k = sub.add_parser("pack", help="Package a training checkpoint (fp16 + metadata).")
     k.add_argument("src")

@@ -88,14 +88,22 @@ def empirical_quantiles(
     else:
         d = np.diff(context)
         sigma1 = float(d.std()) if len(d) > 1 else float(np.abs(context).mean() * 0.1)
-    sigma1 = max(sigma1, 1e-12)
+    # Floor relative to the series' scale so a perfectly deterministic context
+    # still yields a finite, interpretable band (and anomaly score).
+    sigma1 = max(sigma1, 1e-6 * max(1.0, float(np.abs(context).mean())))
     z = _normal_ppf(levels)
     for j in range(horizon):
+        gaussian = z * sigma1 * np.sqrt(j + 1)
         e = errors[:, j][np.isfinite(errors[:, j])] if errors.size else np.empty(0)
         if len(e) >= 4:
-            q[j] = point[j] + np.quantile(e, levels)
+            # Empirical offsets capture skew and fat tails, but with a handful
+            # of origins they are noisy and can collapse; never let the band
+            # be narrower than the Gaussian sqrt(h) estimate at any level.
+            empirical = np.quantile(e, levels)
+            offsets = np.where(np.abs(empirical) >= np.abs(gaussian), empirical, gaussian)
+            q[j] = point[j] + offsets
         else:
-            q[j] = point[j] + z * sigma1 * np.sqrt(j + 1)
+            q[j] = point[j] + gaussian
     return np.sort(q, axis=-1)
 
 

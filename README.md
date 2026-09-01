@@ -29,12 +29,16 @@ docker compose up --build                                    # same thing, conta
 | **Forecast** | point + 9 quantiles per series, multivariate targets, past-only and known-future covariates, missing values, timestamps out |
 | **Models** | bundled `starter-small` TimesFM-3 checkpoint, your own checkpoints, six classical baselines with empirical bands |
 | **Backtest** | walk-forward, cluster-bootstrap CI, HAC Diebold–Mariano, Holm correction — verdicts, not vibes |
+| **Anomalies** | walk-forward scoring against the model's own predictive band, `/v1/anomalies` and `timesfm3 anomalies` |
+| **Fine-tune** | `timesfm3 finetune data.csv` adapts the starter to your panel and prints a held-out, DM-tested before/after |
 | **Volatility** | HAR + RiskMetrics variance forecasts and Moreira–Muir vol-targeted sizing from daily returns |
-| **Ops** | API key, request limits, `/healthz`, Prometheus `/metrics`, OpenAPI, Docker image, CI |
+| **Ops** | API keys with plans and monthly quotas, usage metering, request limits, `/healthz`, Prometheus `/metrics`, OpenAPI, Docker image, CI |
+| **License** | Apache-2.0 code **and weights** — Google's own TimesFM-3 weights are non-commercial; these are self-trained (`NOTICE`) |
 | **Clients** | `timesfm3` CLI, `timesfm3.client.ForecastClient` (stdlib only) |
 
 The full product guide — API reference, configuration, deployment, model
-card, limits — is in [docs/PRODUCT.md](docs/PRODUCT.md).
+card, limits — is in [docs/PRODUCT.md](docs/PRODUCT.md). The competitive
+research, positioning and pricing model are in [docs/BUSINESS.md](docs/BUSINESS.md).
 
 ![Dashboard](docs/dashboard.png)
 
@@ -96,7 +100,9 @@ timesfm3/
   tabular.py         # CSV in / CSV+JSON out with timestamps
   cli.py             # `timesfm3` command: serve, forecast, backtest, models, pack, train
   client.py          # dependency-free HTTP client
-  serving/           # FastAPI app, model registry, schemas, dashboard
+  anomaly.py         # walk-forward anomaly scoring against predictive bands
+  finetune.py        # fine-tune a checkpoint on a panel, evaluate on its tail
+  serving/           # FastAPI app, model registry, API keys + metering, schemas, dashboard
   assets/            # bundled starter checkpoint
 scripts/
   train_starter.py        # reproduces the bundled starter model

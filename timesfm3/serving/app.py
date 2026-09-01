@@ -13,10 +13,13 @@ Endpoints:
 - ``POST /v1/forecast``     point + quantile forecasts
 - ``POST /v1/backtest``     walk-forward model comparison on your data
 - ``POST /v1/volatility``   variance forecast and vol-targeted sizing
+- ``POST /v1/anomalies``    walk-forward anomaly scoring
+- ``GET  /v1/usage``        the calling key's metered usage this month
 - ``GET  /v1/sample``       demo series for the dashboard
 
-Auth: set ``TIMESFM3_API_KEY`` (or ``create_app(api_key=...)``) and clients
-send ``X-API-Key: <key>`` or ``Authorization: Bearer <key>``.
+Auth and metering: see :mod:`timesfm3.serving.auth`.  Clients send
+``X-API-Key: <key>`` or ``Authorization: Bearer <key>``; every metered
+response carries ``X-Usage-Points`` (charged) and ``X-Usage-Remaining``.
 """
 
 from __future__ import annotations
@@ -32,10 +35,12 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 
 from .. import __version__
+from ..anomaly import detect_anomalies
 from ..evaluation import compare
 from ..quant.volatility import HAR, TRADING_DAYS, ewma_variance, realized_variance
 from ..tabular import future_timestamps, infer_step, parse_freq
 from . import schemas
+from .auth import ANONYMOUS, ApiKey, KeyStore, QuotaExceeded, UsageMeter
 from .registry import ModelRegistry
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -107,13 +112,17 @@ def create_app(
     api_key: str | None = None,
     max_series: int | None = None,
     max_context: int | None = None,
+    keys: KeyStore | None = None,
+    meter: UsageMeter | None = None,
 ) -> FastAPI:
     """Builds the service. Reads ``TIMESFM3_*`` env vars for anything omitted."""
     registry = registry or ModelRegistry.from_env()
-    api_key = api_key if api_key is not None else os.environ.get("TIMESFM3_API_KEY") or None
+    keys = keys or KeyStore.from_env(api_key)
+    meter = meter or UsageMeter(os.environ.get("TIMESFM3_USAGE_FILE") or None)
     max_series = max_series or int(os.environ.get("TIMESFM3_MAX_SERIES", "64"))
     max_context = max_context or int(os.environ.get("TIMESFM3_MAX_CONTEXT", "16384"))
     metrics = Metrics()
+    anonymous = ApiKey(key="", name=ANONYMOUS, plan="open")
 
     app = FastAPI(
         title="TimesFM-3 Forecast Service",
@@ -124,16 +133,35 @@ def create_app(
     )
     app.state.registry = registry
     app.state.metrics = metrics
+    app.state.keys = keys
+    app.state.meter = meter
 
-    async def require_key(request: Request) -> None:
-        if api_key is None:
-            return
+    async def require_key(request: Request) -> ApiKey:
+        if keys.open:
+            return anonymous
         header = request.headers.get("x-api-key")
         auth = request.headers.get("authorization", "")
         if auth.lower().startswith("bearer "):
             header = header or auth[7:].strip()
-        if header != api_key:
+        found = keys.lookup(header)
+        if found is None:
             raise HTTPException(status_code=401, detail="Invalid or missing API key.")
+        return found
+
+    def charge(key: ApiKey, points: int, response: Response) -> None:
+        """Meters ``points`` against the key; 429 when the plan is exhausted."""
+        try:
+            bucket = meter.charge(key, points)
+        except QuotaExceeded as e:
+            raise HTTPException(
+                status_code=429, detail=str(e),
+                headers={"x-usage-remaining": "0", "retry-after": "86400"},
+            )
+        response.headers["x-usage-points"] = str(points)
+        if not key.unlimited:
+            response.headers["x-usage-remaining"] = str(
+                max(0, key.monthly_points - bucket["points"])
+            )
 
     def _timed(endpoint: str):
         class _Timer:
@@ -190,6 +218,11 @@ def create_app(
     async def models() -> list[dict]:
         return registry.describe()
 
+    @app.get("/v1/usage", response_model=schemas.Usage, tags=["ops"])
+    async def usage(key: ApiKey = Depends(require_key)) -> dict:
+        """Metered usage of the calling key for the current month."""
+        return meter.usage(key)
+
     @app.get("/v1/sample", tags=["models"], dependencies=[Depends(require_key)])
     async def sample(n: int = 336) -> dict:
         """A demo panel: a bundled ETTh2 slice if present, else synthetic."""
@@ -197,9 +230,10 @@ def create_app(
 
     # -- forecasting -------------------------------------------------------
 
-    @app.post("/v1/forecast", response_model=schemas.ForecastResponse, tags=["forecast"],
-              dependencies=[Depends(require_key)])
-    async def forecast(req: schemas.ForecastRequest) -> schemas.ForecastResponse:
+    @app.post("/v1/forecast", response_model=schemas.ForecastResponse, tags=["forecast"])
+    async def forecast(
+        req: schemas.ForecastRequest, response: Response, key: ApiKey = Depends(require_key)
+    ) -> schemas.ForecastResponse:
         with _timed("forecast") as timer:
             try:
                 entry = registry.get(req.model)
@@ -225,6 +259,7 @@ def create_app(
                 raise HTTPException(
                     status_code=400, detail="timestamps must have one entry per context step."
                 )
+            charge(key, len(req.targets) * req.horizon, response)
             targets = [_to_array(s) for s in req.targets]
             past = [_to_array(s) for s in req.past_covariates]
             future = [_to_array(s) for s in req.future_covariates]
@@ -264,9 +299,10 @@ def create_app(
 
     # -- backtest ----------------------------------------------------------
 
-    @app.post("/v1/backtest", response_model=schemas.BacktestResponse, tags=["forecast"],
-              dependencies=[Depends(require_key)])
-    async def backtest(req: schemas.BacktestRequest) -> schemas.BacktestResponse:
+    @app.post("/v1/backtest", response_model=schemas.BacktestResponse, tags=["forecast"])
+    async def backtest(
+        req: schemas.BacktestRequest, response: Response, key: ApiKey = Depends(require_key)
+    ) -> schemas.BacktestResponse:
         with _timed("backtest") as timer:
             names = req.models or registry.names()
             for m in list(names) + [req.reference]:
@@ -277,6 +313,7 @@ def create_app(
             if len(req.series) > max_series:
                 raise HTTPException(status_code=413, detail=f"At most {max_series} series.")
             series = [_to_array(s) for s in req.series]
+            charge(key, len(series) * req.windows * req.horizon * len(set(names)), response)
             try:
                 report = await run_in_threadpool(
                     run_backtest, registry, series, req.context, req.horizon,
@@ -288,10 +325,12 @@ def create_app(
 
     # -- volatility --------------------------------------------------------
 
-    @app.post("/v1/volatility", response_model=schemas.VolatilityResponse, tags=["quant"],
-              dependencies=[Depends(require_key)])
-    async def volatility(req: schemas.VolatilityRequest) -> schemas.VolatilityResponse:
+    @app.post("/v1/volatility", response_model=schemas.VolatilityResponse, tags=["quant"])
+    async def volatility(
+        req: schemas.VolatilityRequest, response: Response, key: ApiKey = Depends(require_key)
+    ) -> schemas.VolatilityResponse:
         with _timed("volatility") as timer:
+            charge(key, req.horizon, response)
             if req.returns is None and req.prices is None:
                 raise HTTPException(status_code=400, detail="Provide returns or prices.")
             if req.returns is not None:
@@ -307,6 +346,55 @@ def create_app(
                 variance_report, r, req.horizon, req.vol_target, req.max_leverage
             )
             return schemas.VolatilityResponse(**report, latency_ms=timer.ms)
+
+    # -- anomalies ---------------------------------------------------------
+
+    @app.post("/v1/anomalies", response_model=schemas.AnomalyResponse, tags=["forecast"])
+    async def anomalies(
+        req: schemas.AnomalyRequest, response: Response, key: ApiKey = Depends(require_key)
+    ) -> schemas.AnomalyResponse:
+        with _timed("anomalies") as timer:
+            try:
+                entry = registry.get(req.model)
+            except KeyError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+            if len(req.series) > max_series:
+                raise HTTPException(status_code=413, detail=f"At most {max_series} series.")
+            lengths = {len(s.values) for s in req.series}
+            if max(lengths) > max_context * 4:
+                raise HTTPException(
+                    status_code=413, detail=f"Series are capped at {max_context * 4} steps."
+                )
+            if req.timestamps is not None and len(req.timestamps) not in lengths:
+                raise HTTPException(
+                    status_code=400, detail="timestamps must have one entry per step."
+                )
+            series = [_to_array(s) for s in req.series]
+            charge(key, sum(max(0, len(x) - req.context) for x in series), response)
+            out = []
+            for name, x in zip(_names(req.series, "series"), series):
+                try:
+                    rep = await run_in_threadpool(
+                        detect_anomalies, entry, x, req.context, req.block, req.threshold
+                    )
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+                stamps = req.timestamps if req.timestamps and len(req.timestamps) == len(x) else None
+                item = schemas.SeriesAnomalies(
+                    name=name, n_scored=int(np.isfinite(rep.scores).sum()),
+                    n_flagged=int(rep.flagged.sum()),
+                    anomalies=[schemas.Anomaly(**a) for a in rep.anomalies(x, stamps)],
+                )
+                if req.include_scores:
+                    item.scores = [_finite(v) for v in rep.scores]
+                    item.expected = [_finite(v) for v in rep.expected]
+                    item.lower = [_finite(v) for v in rep.lower]
+                    item.upper = [_finite(v) for v in rep.upper]
+                out.append(item)
+            return schemas.AnomalyResponse(
+                model=entry.name, context=req.context, block=req.block,
+                threshold=req.threshold, series=out, latency_ms=timer.ms,
+            )
 
     return app
 

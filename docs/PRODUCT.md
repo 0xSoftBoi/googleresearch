@@ -37,7 +37,11 @@ curl -s -X POST localhost:8000/v1/forecast -H 'content-type: application/json' \
 | Classical baselines | last-value, drift, context-mean, EWMA, AR(1), AR(4), each with quantile bands |
 | `/v1/backtest` | Walk-forward comparison with cluster-bootstrap CIs, HAC Diebold–Mariano tests, Holm correction |
 | `/v1/volatility` | HAR and RiskMetrics variance forecasts, Moreira–Muir vol-targeted weight |
-| `timesfm3` CLI | forecast / backtest CSV files, list models, package checkpoints, train |
+| `/v1/anomalies` | Walk-forward anomaly scoring against the model's own predictive band |
+| `timesfm3 finetune` | Fine-tune the starter on your CSV, validate on its held-out tail, print the same DM-tested backtest |
+| API keys & metering | Named keys with plans and monthly forecast-point quotas, `/v1/usage`, usage headers, 429 on exhaustion |
+| Apache-2.0 code **and weights** | Google's TimesFM-3 weights are non-commercial; ours are self-trained (see `NOTICE`) |
+| `timesfm3` CLI | forecast / backtest / anomalies / finetune on CSV files, list models, package checkpoints, train |
 | `timesfm3.client` | Dependency-free Python client returning numpy arrays |
 | Docker image | CPU-only, ~1 GB, health-checked, extra checkpoints via a mounted volume |
 
@@ -70,6 +74,32 @@ timesfm3 forecast data.csv --horizon 24 --format json --model ewma
 CSV layout: one row per time step, one column per series, optional leading
 timestamp column and header. Empty cells are missing values.
 
+### Find anomalies
+
+```bash
+timesfm3 anomalies metrics.csv --context 192 --block 24 --threshold 2
+```
+
+Each point is scored against the forecast the model made *before seeing
+it*: `score = 1` sits on the q10/q90 edge, so the default threshold of 2 is
+roughly 2.6σ for a Gaussian band (~1% of points). On seasonal test data with
+two planted spikes, the bundled model flags exactly those two with no false
+alarms; EWMA misses one and raises five — seasonality is what the neural
+model buys you here.
+
+### Fine-tune on your data and prove it helped
+
+```bash
+timesfm3 finetune sales.csv --out sales-v1.pt --name sales-v1 --steps 300 --periods 7
+```
+
+Starts from the bundled checkpoint, trains on the first 80% of your panel,
+validates on the last 20%, packages the result, then runs the same
+walk-forward backtest the API serves on that held-out tail — base model vs
+fine-tuned vs the classical baselines — and prints the verdict. On the ETTh2
+demo panel, 200 CPU steps (under a minute) cut MAE 2.3% versus the base
+model. Serve the result with `timesfm3 serve --checkpoint sales-v1=sales-v1.pt`.
+
 ### Backtest before you believe anything
 
 ```bash
@@ -99,9 +129,9 @@ say out loud.
 
 ## API reference
 
-All `/v1` endpoints accept and return JSON. If `TIMESFM3_API_KEY` is set,
-send it as `X-API-Key: <key>` or `Authorization: Bearer <key>`;
-`/healthz` stays open for load balancers.
+All `/v1` endpoints accept and return JSON. When API keys are configured
+(see *API keys and plans* below), send one as `X-API-Key: <key>` or
+`Authorization: Bearer <key>`; `/healthz` stays open for load balancers.
 
 ### `POST /v1/forecast`
 
@@ -162,6 +192,31 @@ Returns one `ModelScore` per model: `mean_loss`, `ratio`, `ci_low`,
 or `{"prices": [...]}`. Returns, for `riskmetrics` (λ = 0.94) and `har`
 (Corsi 2009), the daily variance path, annualized vol, and the
 Moreira–Muir weight `vol_target / forecast_vol` capped at `max_leverage`.
+
+### `POST /v1/anomalies`
+
+```json
+{"series": [{"name": "cpu", "values": ["..."]}], "model": "starter-small",
+ "context": 96, "block": 24, "threshold": 2.0, "timestamps": ["..."], "include_scores": false}
+```
+
+Returns, per series, `n_scored`, `n_flagged` and the flagged points
+(`index`, `timestamp`, `value`, `expected`, `lower`, `upper`, `score`,
+`direction`); `include_scores` adds the full per-step score and band arrays
+for plotting.
+
+### `GET /v1/usage`
+
+The calling key's metered usage this month: `points_used`, `requests`,
+`monthly_quota`, `points_remaining`. Every metered response also carries
+`X-Usage-Points` (charged by this request) and, for quota-limited keys,
+`X-Usage-Remaining`. A request that would exceed the quota returns `429`
+with `Retry-After` and is not charged.
+
+**Billable unit: forecast points** — one series × one horizon step. A
+forecast charges `targets × horizon`; a backtest `series × windows × horizon
+× models`; anomaly scoring one point per scored observation; volatility one
+per horizon step.
 
 ### `GET /v1/models`, `GET /healthz`, `GET /metrics`, `GET /v1/sample`
 
@@ -224,11 +279,35 @@ walk-forward residual quantiles estimated inside the context window
 (nothing beyond the forecast origin is used), falling back to a Gaussian
 band scaled by the one-step residual times √h when the context is short.
 
+## API keys and plans
+
+```bash
+# one unlimited key
+TIMESFM3_API_KEY=s3cret timesfm3 serve
+# several keys with monthly quotas (name:key[:monthly_points])
+TIMESFM3_API_KEYS="acme:ak-1:2000000,beta:bk-2:20000000,internal:ik-3" timesfm3 serve
+# or a file, with plan labels
+TIMESFM3_API_KEYS_FILE=keys.json TIMESFM3_USAGE_FILE=usage.json timesfm3 serve
+```
+
+```json
+{"keys": [{"key": "ak-1", "name": "acme", "plan": "starter", "monthly_points": 2000000}]}
+```
+
+Counters reset per calendar month (UTC). With `TIMESFM3_USAGE_FILE` they
+survive restarts; without it they live in memory. With no keys configured
+the service is open and metered under one `anonymous` key, so the usage
+headers and `/v1/usage` still work. Rate limiting per second is left to your
+gateway; quotas here are monthly.
+
 ## Configuration
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `TIMESFM3_API_KEY` | unset | Require this key on `/v1/*` |
+| `TIMESFM3_API_KEY` | unset | One unlimited key named `default` |
+| `TIMESFM3_API_KEYS` | unset | Inline `name:key[:monthly_points]` list |
+| `TIMESFM3_API_KEYS_FILE` | unset | JSON file of keys with plans and quotas |
+| `TIMESFM3_USAGE_FILE` | unset | Persist monthly usage counters here |
 | `TIMESFM3_CHECKPOINTS` | unset | Comma-separated `[name=]path` checkpoints to serve |
 | `TIMESFM3_MODEL_DIR` | unset (`/models` in Docker) | Serve every `*.pt` in this directory |
 | `TIMESFM3_DEFAULT_MODEL` | last checkpoint added, else `ewma` | Model used when a request omits `model` |
@@ -248,6 +327,13 @@ band scaled by the one-step residual times √h when the context is short.
 - **Observability.** Scrape `/metrics`; `latency_ms` is also on every response.
 - **Safety limits.** Cap series count and context length with the env vars
   above; long horizons decode in rolling chunks and cost linearly.
+- **Licensing.** Code and bundled weights are Apache-2.0 (`LICENSE`,
+  `NOTICE`). The Google-released TimesFM-3 weights are *not* included and
+  are non-commercial; do not drop them into `TIMESFM3_MODEL_DIR` for
+  production use.
+
+The market context, positioning and pricing model are in
+[docs/BUSINESS.md](BUSINESS.md).
 
 ## Python client
 

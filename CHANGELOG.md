@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.0 — what the market sells
+
+Driven by the competitive research in `docs/BUSINESS.md`.
+
+- **Anomaly detection**: `POST /v1/anomalies` and `timesfm3 anomalies` score
+  every observation against the forecast made before it was seen.
+- **Fine-tuning**: `timesfm3 finetune` adapts a checkpoint to a CSV panel,
+  validates on the held-out tail, packages the result and prints a
+  DM-tested backtest of base vs fine-tuned vs classical baselines.
+  `train()` accepts `init_state`; `RealWindowDataset(tail=True)` samples
+  held-out windows.
+- **API keys, plans, quotas, metering**: named keys from env or JSON file,
+  monthly forecast-point quotas, `X-Usage-Points`/`X-Usage-Remaining`
+  headers, `/v1/usage`, 429 on exhaustion, persistent counters.
+- **Classical quantile bands** never narrower than the Gaussian √h estimate
+  (cuts false alarms with few in-context origins).
+- `LICENSE` (Apache-2.0) and `NOTICE`; `docs/BUSINESS.md`.
+- 11 new tests (113 total).
+
 ## 0.2.0 — forecasting service
 
 Turned the research implementation into a deployable product.
