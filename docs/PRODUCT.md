@@ -77,11 +77,13 @@ timesfm3 backtest data.csv --context 256 --horizon 24 --windows 20
 ```
 
 ```
+timesfm3/serving/static/sample.csv: 7 series, 20 non-overlapping windows/series, context 256, horizon 24, MAE ratio vs last-value (< 1 is better)
 model               mean mae   ratio            95% CI  p (Holm)   win    n (eff)  verdict
-starter-small          1.912   0.763    [0.701, 0.831]     0.000   71%  140 (  96)  better
-ewma                   2.346   0.936    [0.863, 0.983]     0.002   63%  140 (  64)  better
-last-value             2.505   1.000                 -         -     -  140 ( 140)  reference
-drift                  2.527   1.009    [1.000, 1.017]     0.344   47%  140 ( 140)  no difference
+starter-small          2.183   0.881    [0.751, 1.008]     0.085   78%  140 (  33)  no difference
+ewma                   2.309   0.931    [0.854, 0.982]     0.000   65%  140 (  23)  better
+ar4                    2.432   0.981    [0.864, 1.073]     1.000   61%  140 (  56)  no difference
+last-value             2.479   1.000                 -         -     -  140 ( 140)  reference
+drift                  2.488   1.004    [0.993, 1.015]     1.000   51%  140 ( 140)  no difference
 ```
 
 Every model is scored on the same non-overlapping windows; the ratio is its
@@ -89,7 +91,11 @@ mean loss over the reference's (below 1 is better); the interval is a
 bootstrap that resamples whole series so windows from one series are not
 treated as independent; the p-value is a HAC-corrected Diebold–Mariano test
 with Holm correction across the models tested. **Deploy a model only when
-its verdict is `better`.**
+its verdict is `better`.** In the run above the bundled model has the lowest
+error and wins 78% of windows, yet its corrected p-value is 0.085 — the test
+is telling you that 140 autocorrelated windows (33 effective) are not enough
+evidence at 5%, which is precisely the kind of thing this endpoint exists to
+say out loud.
 
 ## API reference
 
@@ -177,7 +183,24 @@ ETTh2 tail, so what you see there is a genuine zero-shot forecast.
 Measured on ETTh2 (7 series, context 256, horizon 24, 20 non-overlapping
 windows per series, MAE ratio vs last-value; `timesfm3 backtest`):
 
-STARTER_RESULTS_PENDING: measured on the bundled checkpoint in the commit that adds it.
+| model | mean MAE | ratio vs last-value | 95% CI | p (Holm) | win rate | n (eff.) | verdict |
+|---|---|---|---|---|---|---|---|
+| **starter-small** | 2.183 | **0.881** | [0.751, 1.008] | 0.085 | 78% | 140 (33) | no difference |
+| ewma | 2.309 | 0.931 | [0.854, 0.982] | 0.000 | 65% | 140 (23) | better |
+| ar4 | 2.432 | 0.981 | [0.864, 1.073] | 1.000 | 61% | 140 (56) | no difference |
+| ar1 | 2.448 | 0.988 | [0.870, 1.090] | 1.000 | 56% | 140 (57) | no difference |
+| last-value | 2.479 | 1.000 | — | — | — | 140 (140) | reference |
+| drift | 2.488 | 1.004 | [0.993, 1.015] | 1.000 | 51% | 140 (140) | no difference |
+| ctx-mean | 2.555 | 1.031 | [0.891, 1.135] | 1.000 | 55% | 140 (60) | no difference |
+
+Read it plainly: the starter model has the lowest mean error of the seven
+and wins more windows than any other (78%), but with only 33 effective
+independent windows the HAC Diebold–Mariano test does not reach 5%
+significance after Holm correction (p = 0.085). EWMA's smaller edge is
+significant because its loss differential is far less autocorrelated. The
+notebook's scaled-MAE numbers for the same recipe (0.76 vs 1.06) use a
+different, per-window-normalized metric; the table above is the stricter,
+deployment-relevant one.
 
 Retrain it with `make starter-model` (≈35 min on 4 CPU cores; a GPU and the
 `base` config are the path to released-model quality).
@@ -241,9 +264,10 @@ client.backtest([history], context=256, horizon=24)
 ## Limits, stated plainly
 
 - The starter model is a small CPU-trained checkpoint, not the released
-  334 M-parameter TimesFM-3. It beats naive baselines on the held-out
-  benchmark above; it is not a substitute for a model trained on your
-  domain, which is exactly what the backtest endpoint is there to measure.
+  334 M-parameter TimesFM-3. On the held-out benchmark above it has the
+  lowest error but not a statistically significant edge over EWMA at 5%;
+  it is a working default, not a substitute for a model trained on your
+  domain — which is exactly what the backtest endpoint is there to measure.
 - Classical-model bands are empirical, not conformal guarantees.
 - The volatility endpoint uses daily squared returns as the variance proxy;
   with intraday data HAR would do better.

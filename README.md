@@ -5,8 +5,8 @@ dashboard, and a backtest that tells you whether the model beats a random
 walk on your own data.** Built on an independent PyTorch implementation of
 Google Research's
 [TimesFM-3](https://research.google/blog/timesfm-3-a-zero-shot-foundation-model-for-multivariate-forecasting/)
-architecture, with a bundled pre-trained starter model so it works out of
-the box on CPU.
+architecture, with a bundled pre-trained starter model (5.2 M parameters,
+trained on public benchmark data) so it works out of the box on CPU.
 
 ```bash
 pip install "timesfm3[serve] @ git+https://github.com/0xSoftBoi/googleresearch"

@@ -39,7 +39,7 @@ def main() -> None:
     parser.add_argument("--config", choices=["tiny", "small"], default="small")
     parser.add_argument("--steps", type=int, default=6000)
     parser.add_argument("--batch-size", type=int, default=16)
-    parser.add_argument("--out", default="models/starter-small.pt")
+    parser.add_argument("--out", default="timesfm3/assets/starter-small.pt")
     parser.add_argument("--scratch", default="starter_train.pt",
                         help="where the full-precision best checkpoint is written")
     args = parser.parse_args()
