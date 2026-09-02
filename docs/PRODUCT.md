@@ -374,7 +374,9 @@ batch of blind-signed credits once (with x402 or a plan) and spend
 single-use tokens the service cannot link to the purchase or to each other.
 `GET /v1/credits/pool` gives the pool key, `POST /v1/credits/buy/{10|25|100}`
 signs blinded serials ($0.004 per credit), and `X-Credit: token[,token]`
-pays for a call (forecast 1, volatility 1, anomalies 2, backtest 4). The CLI
+pays for a call (forecast 1, volatility 1, anomalies 2, backtest 4). Tokens
+are RFC 9474 blind signatures, interoperable with the Cloudflare Worker's
+edge pool and with any conforming client library. The CLI
 (`timesfm3 credits buy`) and `ForecastClient(credits=CreditWallet(...))` do
 the blinding. Threat model, on-chain Privacy Pools funding and operator
 notes are in [docs/PRIVACY.md](PRIVACY.md).
@@ -392,7 +394,8 @@ notes are in [docs/PRIVACY.md](PRIVACY.md).
 | `TIMESFM3_X402_FACILITATOR` | by network | Facilitator base URL (`/verify`, `/settle`) |
 | `TIMESFM3_X402_FACILITATOR_AUTH` | unset | `Authorization` header for the facilitator (CDP) |
 | `TIMESFM3_X402_PRICES` | see above | JSON overrides, e.g. `{"POST /v1/forecast": "$0.01"}` |
-| `TIMESFM3_CREDITS_KEY_FILE` | unset (ephemeral key) | RSA key for the credit pool; set it so tokens survive restarts |
+| `TIMESFM3_CREDITS_KEY_FILE` | unset (ephemeral key) | Private JWK for the credit pool (`scripts/credits_keygen.py`); shared with the Worker |
+| `TIMESFM3_CREDITS_OLD_KEYS` | unset | Comma-separated older key files that stay redeemable after rotation |
 | `TIMESFM3_CREDITS_LEDGER_FILE` | unset | Persist spent serials and pool counters |
 | `TIMESFM3_CREDITS_PRICE` | `0.004` | USD per credit (x402 prices for the denominations are set via `TIMESFM3_X402_PRICES`) |
 | `TIMESFM3_CHECKPOINTS` | unset | Comma-separated `[name=]path` checkpoints to serve |

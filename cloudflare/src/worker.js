@@ -21,8 +21,9 @@
 
 import * as F from "../public/js/forecast.js";
 import { describe as describeX402, finalize as x402Finalize, requirePayment, x402Config } from "./x402.js";
+import { DENOMINATIONS, creditCost, creditPool, describe as describeCredits, priceUsd, redeem as redeemCredits, signBlinded } from "./credits.js";
 
-const VERSION = "0.6.0";
+const VERSION = "0.7.0";
 const PROXY_PREFIXES = ["/v1/", "/healthz", "/docs", "/openapi.json", "/redoc"];
 const CACHEABLE = new Set(["/v1/models", "/v1/sample", "/healthz"]);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -52,16 +53,29 @@ export default {
         // x402: anonymous callers pay per call; bring-your-own-key callers are
         // metered upstream instead (gateway mode only, where keys are validated).
         const cfg = x402Config(env);
-        // Prepaid unlinkable credits (X-Credit) are validated by the upstream service.
-        const hasKey = Boolean(request.headers.get("x-api-key") || bearer(request.headers.get("authorization")) || request.headers.get("x-credit"));
-        const paywall = cfg && (gateway ? !hasKey : env.X402_PAYWALL_EDGE_NATIVE === "1");
+        const pool = gateway ? null : await creditPool(env);
+        if (cfg && pool) for (const n of DENOMINATIONS) cfg.prices[`POST /v1/credits/buy/${n}`] = priceUsd(pool, n);
+        const creditHeader = request.headers.get("x-credit");
+        // Bring-your-own-key and X-Credit callers skip the x402 paywall; in gateway
+        // mode the upstream validates them, in edge-native mode credits are redeemed here.
+        const hasKey = Boolean(request.headers.get("x-api-key") || bearer(request.headers.get("authorization")) || creditHeader);
+        let creditsSpent = 0;
+        if (!gateway && creditHeader && pool) {
+          const cost = creditCost(request.method, path);
+          if (cost === null) return cors(json({ detail: "This endpoint does not take credits." }, 400), request, env);
+          const r = await redeemCredits(pool, env, creditHeader, cost);
+          if (!r.ok) return cors(json({ detail: `Credit rejected: ${r.why}. Buy credits at POST /v1/credits/buy/{n}.` }, 402), request, env);
+          creditsSpent = cost;
+        }
+        const paywall = cfg && !creditsSpent && (gateway ? !hasKey : env.X402_PAYWALL_EDGE_NATIVE === "1" || path.startsWith("/v1/credits/buy/"));
         let payment = null;
         if (paywall) {
           const gate = await requirePayment(cfg, request, path);
           if (gate && gate.response) return cors(gate.response, request, env);
           if (gate) payment = gate.payment;
         }
-        let response = gateway ? await proxy(request, env, ctx, path + url.search) : cors(await edgeApi(request, env, url), request, env);
+        let response = gateway ? await proxy(request, env, ctx, path + url.search) : cors(await edgeApi(request, env, url, { pool, paid: Boolean(payment) }), request, env);
+        if (creditsSpent) response.headers.set("x-credits-spent", String(creditsSpent));
         if (payment) response = cors(await x402Finalize(cfg, payment, response), request, env);
         return response;
       }
@@ -76,9 +90,26 @@ export default {
 
 /* ---------- edge-native API (classical models in JS) ---------- */
 
-async function edgeApi(request, env, url) {
+async function edgeApi(request, env, url, extra = {}) {
   const path = url.pathname;
   const t0 = Date.now();
+  const pool = extra.pool || null;
+  if (path === "/v1/credits/pool" && request.method === "GET") {
+    if (!pool) return json({ detail: "Credit pool not configured on this edge (set CREDITS_PRIVATE_JWK)." }, 404);
+    return json(await describeCredits(pool, env));
+  }
+  if (path.startsWith("/v1/credits/buy/") && request.method === "POST") {
+    if (!pool) return json({ detail: "Credit pool not configured on this edge." }, 404);
+    const count = Number(path.slice("/v1/credits/buy/".length));
+    if (!DENOMINATIONS.includes(count)) return json({ detail: `Denominations: ${DENOMINATIONS.join(", ")}` }, 404);
+    if (!extra.paid && x402Config(env)) return json({ detail: "Payment required." }, 402);
+    let body;
+    try { body = await request.json(); } catch { return json({ detail: "Body must be JSON." }, 422); }
+    const blinded = body && Array.isArray(body.blinded) ? body.blinded : null;
+    if (!blinded || blinded.length !== count) return json({ detail: `Body must be {"blinded": [<${count} base64url blinded messages>]}.` }, 422);
+    try { return json({ kid: pool.issuing.kid, suite: "RSABSSA-SHA384-PSSZERO-Deterministic", count, blind_signatures: await signBlinded(pool, env, blinded) }); }
+    catch (e) { return json({ detail: e.message }, 422); }
+  }
   if (path === "/healthz") return json({ status: "ok", version: VERSION + "-edge", models: (await models(env, request)).length, default_model: "ewma", device: "cloudflare-edge + browser-wasm" });
   if (path === "/docs" || path === "/docs/") return withSecurityHeaders(await asset(env, request, "/docs/index.html"));
   if (path === "/openapi.json" || path === "/redoc") return json({ detail: "OpenAPI is served by the self-hosted service; see /docs." }, 404);
@@ -303,6 +334,7 @@ function pricing(env, gateway) {
     free: gateway ? "GET endpoints; bring your own API key for metered plans" : "classical-model API at the edge, TimesFM-3 in the browser at /app",
     plans: gateway ? { how: "X-API-Key from the service operator; metered in forecast points; see /v1/usage" } : null,
     x402: paywall ? describeX402(cfg) : { enabled: false, note: cfg ? "configured but not enforced in edge-native mode" : "set X402_PAY_TO to enable" },
+    credits: gateway ? { how: "validated by the upstream service" } : (env.CREDITS_PRIVATE_JWK ? { enabled: true, how: "GET /v1/credits/pool, POST /v1/credits/buy/{10|25|100} (x402), X-Credit: token[,token]", costs: { "POST /v1/forecast": 1, "POST /v1/volatility": 1, "POST /v1/anomalies": 2, "POST /v1/backtest": 4 } } : { enabled: false, note: "set CREDITS_PRIVATE_JWK + D1 binding to sell unlinkable credits at the edge" }),
   };
 }
 function clientIp(request) { return request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || "0.0.0.0"; }
@@ -320,7 +352,7 @@ function cors(response, request, env) {
   else if (origin && allowed.includes(origin)) { r.headers.set("access-control-allow-origin", origin); r.headers.set("vary", "origin"); }
   r.headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
   r.headers.set("access-control-allow-headers", "content-type, x-api-key, authorization, payment-signature, x-payment, x-credit");
-  r.headers.set("access-control-expose-headers", "x-usage-points, x-usage-remaining, x-usage-paid, x-edge-cache, x-ratelimit-limit, x-ratelimit-remaining, retry-after, payment-required, payment-response");
+  r.headers.set("access-control-expose-headers", "x-usage-points, x-usage-remaining, x-usage-paid, x-credits-spent, x-edge-cache, x-ratelimit-limit, x-ratelimit-remaining, retry-after, payment-required, payment-response");
   r.headers.set("access-control-max-age", "86400");
   return r;
 }

@@ -30,8 +30,17 @@ use `eip155:8453` plus the `X402_FACILITATOR_AUTH` secret (Coinbase CDP) on
 mainnet. `X402_PAYWALL_EDGE_NATIVE=1` also charges for the edge classical
 API. `GET /v1/pricing` publishes the terms; `GET /api/edge` shows the state.
 
-Requests carrying `X-Credit` (unlinkable prepaid credits, see
-`docs/PRIVACY.md`) pass the edge paywall and are validated upstream.
+**Unlinkable prepaid credits at the edge** (`docs/PRIVACY.md`): with the
+secret `CREDITS_PRIVATE_JWK` (make one with `python scripts/credits_keygen.py`)
+and the D1 binding, the Worker blind-signs credits (RFC 9474 via
+`@cloudflare/blindrsa-ts`), sells them in batches of 10/25/100 through x402,
+and redeems `X-Credit` tokens against a D1 nullifier ledger — the same key
+and token format as the Python service, so credits are interchangeable. In
+gateway mode `X-Credit` requests pass the paywall and are validated upstream.
+The D1 database `timesfm3-credits` (`10503e65-8f18-4803-890f-809025735489`)
+exists in the connected account; apply `migrations/0001_credits.sql` with
+`npx wrangler d1 migrations apply timesfm3-credits` (`--local` for dev; dev
+secrets go in `.dev.vars`).
 
 Per-IP rate limiting (30/min) uses the Workers rate-limit binding, which is
 free and makes no KV writes — the free tier's 1,000 KV writes/day are kept

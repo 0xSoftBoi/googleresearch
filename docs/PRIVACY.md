@@ -26,12 +26,17 @@ per minute and keeps nothing.
 
 ## The credit pool (this repo)
 
-Chaum's RSA blind signatures with a full-domain hash. The buyer picks random
-serials, blinds them, and asks the server to sign the blinded values; the
-server signs without seeing the serials and charges once for the batch. The
-buyer unblinds and holds tokens. Redeeming a token proves it was signed by
-the pool key and has not been spent (the serial is its nullifier), and
-nothing more.
+The scheme is **RFC 9474, RSABSSA-SHA384-PSSZERO-Deterministic** — the IETF
+standard for RSA blind signatures, implemented in `timesfm3/blindrsa.py`
+(pure Python, checked against all four of the RFC's test vectors) and, at
+the edge, with Cloudflare's `@cloudflare/blindrsa-ts`. Tokens issued by
+either verify in the other (tested), so any conforming client library can
+buy and spend credits. The buyer picks random 32-byte serials, blinds them,
+and asks the server to sign the blinded values; the server signs without
+seeing the serials and charges once for the batch. The buyer unblinds and
+holds tokens (`kid.serial.signature`). Redeeming a token proves it was
+signed by a pool key and has not been spent (the serial is its nullifier),
+and nothing more.
 
 ```bash
 timesfm3 credits buy --api https://api.example.com --count 25 --private-key 0x...   # pay with x402
@@ -55,13 +60,23 @@ What the pool does not hide: request timing and IP address (use a proxy,
 Tor, or the Cloudflare edge, which forwards only a per-minute hashed
 counter), and the fact that *someone* bought N credits at time T.
 
-Operator notes: set `TIMESFM3_CREDITS_KEY_FILE` so the signing key survives
-restarts (otherwise tokens die with the process) and
-`TIMESFM3_CREDITS_LEDGER_FILE` so spent serials persist. Rotate the key by
-pointing at a new file; outstanding tokens on the old key are lost, so
-announce rotations. The scheme is single-server: the operator holds the
-signing key and could issue itself free credits, which affects its own
-revenue, not buyers' privacy.
+Operator notes: `python scripts/credits_keygen.py keys/credits.json` makes a
+private JWK that both the service (`TIMESFM3_CREDITS_KEY_FILE`) and the
+Cloudflare Worker (secret `CREDITS_PRIVATE_JWK`) load, so credits bought
+from one redeem at the other. Set `TIMESFM3_CREDITS_LEDGER_FILE` so spent
+serials persist (the Worker keeps them in D1). **Rotation never strands
+tokens**: point the issuing key at a new file and list the old keys in
+`TIMESFM3_CREDITS_OLD_KEYS` (files) or `CREDITS_OLD_PUBLIC_JWKS` (public
+JWKs) — they stay valid for redemption while new purchases use the new key;
+`GET /v1/credits/pool` lists every key with its `issuing` flag. The scheme
+is single-server: the operator holds the signing key and could issue itself
+free credits, which affects its own revenue, not buyers' privacy.
+
+The free Cloudflare deployment sells and redeems credits **at the edge**
+with no backend: the Worker blind-signs with the same library Cloudflare
+uses for Privacy Pass, keeps nullifiers in a free D1 database, and takes
+payment for batches with x402. That makes the privacy tier available on
+the $0 deployment, not only to self-hosters.
 
 ## Privacy Pools (on-chain)
 

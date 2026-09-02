@@ -1,6 +1,6 @@
 {
   "name": "timesfm3-edge",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "description": "Cloudflare Workers front end: landing page, API gateway, dashboard proxy, lead capture for the TimesFM-3 Forecast Service.",
   "type": "module",
@@ -14,5 +14,8 @@
   "devDependencies": {
     "onnxruntime-web": "^1.29.0",
     "wrangler": "^4.128.0"
+  },
+  "dependencies": {
+    "@cloudflare/blindrsa-ts": "^0.4.6"
   }
 }

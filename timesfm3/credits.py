@@ -7,18 +7,18 @@ forecasts is the secret, so the service offers a third way to pay:
 
 1. The buyer generates random serials, **blinds** them, and buys a batch of
    signatures (`POST /v1/credits/buy/{n}`, paid once with x402 or a plan).
-2. The server signs the blinded messages with its RSA key without seeing
-   the serials.
+2. The server signs the blinded messages without seeing the serials.
 3. The buyer unblinds and holds single-use tokens. Each API call redeems
    one or more (`X-Credit` header). The server can verify a token is
    genuine and unspent, but cannot tell which purchase it came from or
    which other tokens belong to the same buyer.
 
-All buyers' credits are indistinguishable inside the pool, which is what
-makes the pool private. The scheme is Chaum's RSA blind signature with a
-full-domain hash (RSA-FDH); serials double as nullifiers against double
-spending. This module is the shared arithmetic and the *client* wallet; it
-depends only on the standard library so any client can use it.
+The signature scheme is **RFC 9474** (RSABSSA-SHA384-PSSZERO-Deterministic),
+implemented in :mod:`timesfm3.blindrsa` and interoperable with any
+conforming library -- the Cloudflare Worker issues and redeems the same
+tokens with ``@cloudflare/blindrsa-ts``. Serials double as nullifiers
+against double spending. This module is the shared token format and the
+*client* wallet; it depends only on the standard library.
 """
 
 from __future__ import annotations
@@ -27,13 +27,14 @@ import base64
 import dataclasses
 import hashlib
 import json
-import math
 import os
 import secrets
 import tempfile
 from typing import Iterable
 
-DOMAIN = b"timesfm3-credit-v1"
+from . import blindrsa as B
+
+SUITE = B.RSABSSA_SHA384_PSSZERO_DETERMINISTIC
 SERIAL_BYTES = 32
 
 #: Credits charged per call; a token is one credit.
@@ -45,49 +46,37 @@ CREDIT_COSTS: dict[str, int] = {
 }
 
 
-def key_id(n: int) -> str:
-    return hashlib.sha256(n.to_bytes((n.bit_length() + 7) // 8, "big")).hexdigest()[:12]
-
-
-def full_domain_hash(serial: bytes, n: int) -> int:
-    """Deterministically maps a serial to an integer in [0, n) (MGF1-style)."""
-    nbytes = (n.bit_length() + 7) // 8
-    out = b""
-    counter = 0
-    while len(out) < nbytes:
-        out += hashlib.sha256(DOMAIN + serial + counter.to_bytes(4, "big")).digest()
-        counter += 1
-    # Clear the top byte so the value is always below n for keys >= 16 bits.
-    return int.from_bytes(b"\x00" + out[1:nbytes], "big") % n
-
-
-def _b64e(b: bytes) -> str:
+def b64e(b: bytes) -> str:
     return base64.urlsafe_b64encode(b).decode().rstrip("=")
 
 
-def _b64d(s: str) -> bytes:
+def b64d(s: str) -> bytes:
     return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
 
 
-def encode_token(kid: str, serial: bytes, signature: int, n: int) -> str:
-    nbytes = (n.bit_length() + 7) // 8
-    return f"{kid}.{_b64e(serial)}.{_b64e(signature.to_bytes(nbytes, 'big'))}"
+def key_id(pub: B.PublicKey) -> str:
+    """12 hex chars of SHA-256 over the big-endian modulus (same in the Worker)."""
+    return hashlib.sha256(B.i2osp(pub.n, pub.klen)).hexdigest()[:12]
 
 
-def decode_token(token: str) -> tuple[str, bytes, int]:
+def encode_token(kid: str, serial: bytes, signature: bytes) -> str:
+    return f"{kid}.{b64e(serial)}.{b64e(signature)}"
+
+
+def decode_token(token: str) -> tuple[str, bytes, bytes]:
     kid, s, sig = token.strip().split(".")
-    return kid, _b64d(s), int.from_bytes(_b64d(sig), "big")
+    return kid, b64d(s), b64d(sig)
 
 
-def verify_token(token: str, n: int, e: int, kid: str) -> bytes | None:
-    """Returns the serial if the token carries a valid signature, else None."""
+def verify_token(token: str, pub: B.PublicKey, kid: str) -> bytes | None:
+    """Returns the serial if the token carries a valid signature under ``pub``."""
     try:
         tkid, serial, sig = decode_token(token)
     except (ValueError, TypeError):
         return None
-    if tkid != kid or len(serial) != SERIAL_BYTES or not (0 < sig < n):
+    if tkid != kid or len(serial) != SERIAL_BYTES:
         return None
-    return serial if pow(sig, e, n) == full_domain_hash(serial, n) else None
+    return serial if SUITE.verify(pub, sig, serial) else None
 
 
 def nullifier(serial: bytes) -> str:
@@ -101,17 +90,27 @@ def nullifier(serial: bytes) -> str:
 @dataclasses.dataclass
 class PendingBlind:
     serial: bytes
-    r: int
-    blinded: int
+    inv: int
+    blinded: bytes
+
+
+def issuing_key(pool: dict) -> dict:
+    keys = pool.get("keys") or []
+    for k in keys:
+        if k.get("issuing"):
+            return k
+    if keys:
+        return keys[0]
+    raise ValueError("pool has no keys")
 
 
 class CreditWallet:
-    """Holds unspent tokens and in-flight blinded purchases in a JSON file."""
+    """Holds unspent tokens and the pool's public keys in a JSON file."""
 
     def __init__(self, path: str | None = None):
         self.path = path
         self.tokens: list[str] = []
-        self.pool: dict | None = None  # {kid, n, e}
+        self.pool: dict | None = None  # {suite, keys: [{kid, jwk, issuing}]}
         if path and os.path.exists(path):
             with open(path) as f:
                 doc = json.load(f)
@@ -132,29 +131,27 @@ class CreditWallet:
 
     def prepare(self, pool: dict, count: int) -> list[PendingBlind]:
         """Generates serials and blinds them for a purchase of ``count`` credits."""
-        n, e = int(pool["n"], 16), int(pool["e"])
-        self.pool = {"kid": pool["kid"], "n": pool["n"], "e": pool["e"]}
+        if pool.get("suite", SUITE.name) != SUITE.name:
+            raise ValueError(f"unsupported suite {pool.get('suite')}")
+        key = issuing_key(pool)
+        pub = B.public_from_jwk(key["jwk"])
+        self.pool = {"suite": SUITE.name, "keys": [{"kid": k["kid"], "jwk": k["jwk"], "issuing": bool(k.get("issuing"))} for k in pool["keys"]]}
+        self._issuing = key
         out = []
         for _ in range(count):
             serial = secrets.token_bytes(SERIAL_BYTES)
-            while True:
-                r = secrets.randbelow(n - 2) + 2
-                if math.gcd(r, n) == 1:
-                    break
-            blinded = (full_domain_hash(serial, n) * pow(r, e, n)) % n
-            out.append(PendingBlind(serial=serial, r=r, blinded=blinded))
+            blinded, inv = SUITE.blind(pub, SUITE.prepare(serial))
+            out.append(PendingBlind(serial=serial, inv=inv, blinded=blinded))
         return out
 
-    def finish(self, pending: Iterable[PendingBlind], blind_signatures: Iterable[str]) -> int:
-        """Unblinds the server's signatures and stores verified tokens."""
-        n, e, kid = int(self.pool["n"], 16), int(self.pool["e"]), self.pool["kid"]
+    def finish(self, pending: Iterable[PendingBlind], blind_signatures: Iterable[str], kid: str | None = None) -> int:
+        """Unblinds the server's signatures, verifies them, stores the tokens."""
+        key = self._issuing if kid is None else next(k for k in self.pool["keys"] if k["kid"] == kid)
+        pub = B.public_from_jwk(key["jwk"])
         added = 0
-        for p, sig_hex in zip(pending, blind_signatures):
-            sig = (int(sig_hex, 16) * pow(p.r, -1, n)) % n
-            token = encode_token(kid, p.serial, sig, n)
-            if verify_token(token, n, e, kid) is None:
-                raise ValueError("server returned an invalid blind signature")
-            self.tokens.append(token)
+        for p, sig_b64 in zip(pending, blind_signatures):
+            sig = SUITE.finalize(pub, p.serial, b64d(sig_b64), p.inv)  # raises if invalid
+            self.tokens.append(encode_token(key["kid"], p.serial, sig))
             added += 1
         self.save()
         return added

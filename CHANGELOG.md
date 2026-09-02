@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.0 — standard blind signatures, key rotation, credits at the edge
+
+- `timesfm3/blindrsa.py`: RFC 9474 RSA blind signatures (all four suites),
+  pure Python, validated against the RFC's test vectors and cross-checked
+  with `@cloudflare/blindrsa-ts` in both directions.
+- The credit pool now uses RSABSSA-SHA384-PSSZERO-Deterministic; keys are
+  JWK files shared by the service and the Worker; overlapping keys make
+  rotation lossless (`TIMESFM3_CREDITS_OLD_KEYS`, `CREDITS_OLD_PUBLIC_JWKS`);
+  `/v1/credits/pool` lists keys with the issuing flag; blinded messages and
+  signatures travel as base64url.
+- The Cloudflare Worker issues and redeems credits itself in edge-native
+  mode: `cloudflare/src/credits.js`, D1 ledger (`migrations/0001_credits.sql`,
+  database created in the account), x402-priced batches, `x-credits-spent`.
+- `scripts/credits_keygen.py`; tests for vectors, interop, rotation, the
+  edge pool with a D1 shim, and a Python-issued token redeemed at the edge.
+
 ## 0.6.0 — privacy pools
 
 - **Unlinkable prepaid credits**: RSA-FDH blind signatures (`timesfm3/credits.py`

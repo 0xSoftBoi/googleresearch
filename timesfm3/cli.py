@@ -233,12 +233,12 @@ def cmd_finetune(args) -> int:
 
 def cmd_credits(args) -> int:
     from .client import ForecastClient
-    from .credits import CreditWallet
+    from .credits import CreditWallet, b64e, issuing_key
 
     wallet = CreditWallet(args.wallet)
     if args.action == "status":
         print(f"{args.wallet}: {len(wallet)} unspent credit(s)"
-              + (f", pool key {wallet.pool['kid']}" if wallet.pool else ""))
+              + (f", pool key {issuing_key(wallet.pool)['kid']}" if wallet.pool else ""))
         return 0
     if args.private_key:
         # Pay for the batch with x402 from the given EVM key (needs `pip install "x402[evm]"`).
@@ -256,7 +256,7 @@ def cmd_credits(args) -> int:
         pool = session.get(f"{args.api}/v1/credits/pool", timeout=60).json()
         pending = wallet.prepare(pool, args.count)
         r = session.post(f"{args.api}/v1/credits/buy/{args.count}",
-                         json={"blinded": [format(p.blinded, "x") for p in pending]}, timeout=120)
+                         json={"blinded": [b64e(p.blinded) for p in pending]}, timeout=120)
         if r.status_code != 200:
             print(f"error: HTTP {r.status_code}: {r.text[:300]}", file=sys.stderr)
             return 1

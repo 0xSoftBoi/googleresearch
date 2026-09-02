@@ -18,7 +18,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from .credits import CreditWallet
+from .credits import CreditWallet, b64e
 from .forecaster import ForecastResult
 
 
@@ -90,7 +90,7 @@ class ForecastClient:
         pool = self._request("GET", "/v1/credits/pool")
         pending = wallet.prepare(pool, count)
         res = self._request("POST", f"/v1/credits/buy/{count}",
-                            {"blinded": [format(p.blinded, "x") for p in pending]})
+                            {"blinded": [b64e(p.blinded) for p in pending]})
         return wallet.finish(pending, res["blind_signatures"])
 
     def models(self) -> list[dict]:

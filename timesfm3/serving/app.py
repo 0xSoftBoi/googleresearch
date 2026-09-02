@@ -42,7 +42,10 @@ from ..tabular import future_timestamps, infer_step, parse_freq
 from . import schemas
 from .auth import ANONYMOUS, ApiKey, KeyStore, QuotaExceeded, UsageMeter
 from .registry import ModelRegistry
+from ..credits import SUITE as _SUITE
 from .credits import CREDIT_IDENTITY, DENOMINATIONS, POINTS_PER_CREDIT, CreditPool, credit_cost
+
+SUITE_NAME = _SUITE.name
 from .x402 import X402Config, X402Gate, paid_identity
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -133,6 +136,7 @@ def create_app(
             key_file=os.environ.get("TIMESFM3_CREDITS_KEY_FILE") or None,
             ledger_file=os.environ.get("TIMESFM3_CREDITS_LEDGER_FILE") or None,
             price_per_credit_usd=float(os.environ.get("TIMESFM3_CREDITS_PRICE", "0.004")),
+            old_key_files=[p for p in os.environ.get("TIMESFM3_CREDITS_OLD_KEYS", "").split(",") if p.strip()],
         )
     meter = meter or UsageMeter(os.environ.get("TIMESFM3_USAGE_FILE") or None)
     max_series = max_series or int(os.environ.get("TIMESFM3_MAX_SERIES", "64"))
@@ -269,7 +273,7 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"Denominations: {list(DENOMINATIONS)}")
         blinded = body.get("blinded") if isinstance(body, dict) else None
         if not isinstance(blinded, list) or len(blinded) != count:
-            raise HTTPException(status_code=422, detail=f"Body must be {{\"blinded\": [<{count} hex integers>]}}.")
+            raise HTTPException(status_code=422, detail=f"Body must be {{\"blinded\": [<{count} base64url blinded messages>]}}.")
         if key is CREDIT_IDENTITY:
             raise HTTPException(status_code=400, detail="Credits cannot buy credits.")
         if key.name != "x402":  # plan holders (and open mode) pay in points; x402 paid already
@@ -278,7 +282,7 @@ def create_app(
             sigs = await run_in_threadpool(credits.sign_blinded, blinded)
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
-        return {"kid": credits.kid, "count": count, "blind_signatures": sigs}
+        return {"kid": credits.kid, "suite": SUITE_NAME, "count": count, "blind_signatures": sigs}
 
     @app.get("/metrics", response_class=PlainTextResponse, tags=["ops"])
     async def prometheus() -> str:

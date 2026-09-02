@@ -13,9 +13,10 @@ from timesfm3.client import ForecastClient, ForecastServiceError
 from timesfm3.credits import (
     CREDIT_COSTS,
     CreditWallet,
+    b64e,
     decode_token,
     encode_token,
-    full_domain_hash,
+    issuing_key,
     verify_token,
 )
 from timesfm3.serving.app import create_app
@@ -31,41 +32,52 @@ def pool(tmp_path_factory):
 
 def _buy(pool, wallet, n):
     pending = wallet.prepare(pool.describe(), n)
-    sigs = pool.sign_blinded([format(p.blinded, "x") for p in pending])
+    sigs = pool.sign_blinded([b64e(p.blinded) for p in pending])
     return wallet.finish(pending, sigs)
 
 
 def test_blind_signature_round_trip_and_unlinkability(pool):
     w = CreditWallet()
     pending = w.prepare(pool.describe(), 3)
-    blinded = [format(p.blinded, "x") for p in pending]
-    # the server never sees the serials: blinded values are unrelated to FDH(serial)
-    for p in pending:
-        assert p.blinded != full_domain_hash(p.serial, pool.n)
+    blinded = [b64e(p.blinded) for p in pending]
     sigs = pool.sign_blinded(blinded)
     assert w.finish(pending, sigs) == 3 and len(w) == 3
     for t in w.tokens:
-        assert verify_token(t, pool.n, pool.e, pool.kid) is not None
-    # tokens carry no trace of the blinded messages the server signed
+        assert verify_token(t, pool.public, pool.kid) is not None
+    # tokens carry no trace of what the server saw: neither the blinded messages nor the blind signatures
     for t in w.tokens:
         _, serial, sig = decode_token(t)
-        assert format(sig, "x") not in sigs
+        assert b64e(sig) not in sigs and b64e(serial) not in blinded
     assert pool.issued == 3
+    assert pool.describe()["suite"] == "RSABSSA-SHA384-PSSZERO-Deterministic"
 
 
 def test_tampered_or_foreign_tokens_fail(pool):
     w = CreditWallet(); _buy(pool, w, 1)
     t = w.tokens[0]
     kid, serial, sig = decode_token(t)
-    assert verify_token(encode_token(kid, serial, sig + 1, pool.n), pool.n, pool.e, pool.kid) is None
-    assert verify_token(encode_token("000000000000", serial, sig, pool.n), pool.n, pool.e, pool.kid) is None
-    assert verify_token("garbage", pool.n, pool.e, pool.kid) is None
+    bad = bytes([sig[0] ^ 1]) + sig[1:]
+    assert verify_token(encode_token(kid, serial, bad), pool.public, pool.kid) is None
+    assert verify_token(encode_token("000000000000", serial, sig), pool.public, pool.kid) is None
+    assert verify_token("garbage", pool.public, pool.kid) is None
     other = CreditPool(bits=1024)
-    assert verify_token(t, other.n, other.e, other.kid) is None
+    assert other.redeem(t, 1)[1].startswith("invalid credit token")
     with pytest.raises(ValueError):
         pool.sign_blinded(["zz"])
     with pytest.raises(ValueError):
-        pool.sign_blinded([format(pool.n + 1, "x")])
+        pool.sign_blinded([b64e(b"\xff" * (pool.public.klen + 1))])
+
+
+def test_key_rotation_keeps_old_tokens_redeemable(tmp_path):
+    old = CreditPool(key_file=str(tmp_path / "old.json"), bits=1024)
+    w = CreditWallet(); _buy(old, w, 2)
+    new = CreditPool(key_file=str(tmp_path / "new.json"), old_key_files=[str(tmp_path / "old.json")], bits=1024)
+    assert new.kid != old.kid and [k["issuing"] for k in new.describe()["keys"]] == [True, False]
+    assert new.redeem(w.take(1), 1) == (True, "")
+    # a wallet prepared against the rotated pool blinds toward the issuing key only
+    w2 = CreditWallet(); pend = w2.prepare(new.describe(), 1)
+    w2.finish(pend, new.sign_blinded([b64e(p.blinded) for p in pend]))
+    assert w2.tokens[0].startswith(new.kid)
 
 
 def test_redeem_costs_double_spend_and_persistence(tmp_path):
@@ -83,7 +95,7 @@ def test_redeem_costs_double_spend_and_persistence(tmp_path):
     assert p2.kid == p.kid and p2.redeemed == 4 and p2.issued == 6
     assert p2.redeem(header, 4)[1] == "credit token already spent"
     w2 = CreditWallet(str(tmp_path / "w.json"))
-    assert len(w2) == 1 and w2.pool["kid"] == p.kid
+    assert len(w2) == 1 and issuing_key(w2.pool)["kid"] == p.kid
     assert p.describe()["pool"] == {"issued": 6, "redeemed": 4, "outstanding": 2}
 
 
@@ -103,7 +115,7 @@ def test_api_buy_with_plan_and_spend(client, pool):
     assert info["kid"] == pool.kid and info["denominations"] == list(DENOMINATIONS)
     w = CreditWallet()
     pending = w.prepare(info, 10)
-    r = client.post("/v1/credits/buy/10", json={"blinded": [format(p.blinded, "x") for p in pending]},
+    r = client.post("/v1/credits/buy/10", json={"blinded": [b64e(p.blinded) for p in pending]},
                     headers={"x-api-key": "k1"})
     assert r.status_code == 200 and r.headers["x-usage-points"] == str(10 * POINTS_PER_CREDIT)
     assert w.finish(pending, r.json()["blind_signatures"]) == 10
@@ -120,8 +132,8 @@ def test_api_buy_with_plan_and_spend(client, pool):
     assert again.status_code == 402 and "already spent" in again.json()["detail"]
     assert client.get("/v1/models", headers={"X-Credit": w.take(1)}).status_code == 400  # not a credit route
     assert client.post("/v1/credits/buy/7", json={"blinded": []}, headers={"x-api-key": "k1"}).status_code == 404
-    assert client.post("/v1/credits/buy/10", json={"blinded": ["1"]}, headers={"x-api-key": "k1"}).status_code == 422
-    assert client.post("/v1/credits/buy/10", json={"blinded": ["1"] * 10}, headers={"X-Credit": w.take(1)}).status_code == 400
+    assert client.post("/v1/credits/buy/10", json={"blinded": ["AA"]}, headers={"x-api-key": "k1"}).status_code == 422
+    assert client.post("/v1/credits/buy/10", json={"blinded": ["AA"] * 10}, headers={"X-Credit": w.take(1)}).status_code == 400
     assert client.get("/v1/pricing", headers={"x-api-key": "k1"}).json()["credits"]["costs"] == CREDIT_COSTS
 
 
@@ -146,7 +158,7 @@ def test_credits_bought_with_x402_bypass_paywall_later(registry, pool, monkeypat
                               x402=X402Config(pay_to=PAY_TO), credits=pool))
     w = CreditWallet()
     pending = w.prepare(c.get("/v1/credits/pool").json(), 10)
-    body = {"blinded": [format(p.blinded, "x") for p in pending]}
+    body = {"blinded": [b64e(p.blinded) for p in pending]}
     challenge = c.post("/v1/credits/buy/10", json=body)
     assert challenge.status_code == 402
     pr = _unb64(challenge.headers["payment-required"])
@@ -196,6 +208,65 @@ def test_client_and_cli(registry, pool, tmp_path, monkeypatch, capsys):
 
 
 node = shutil.which("node")
+
+
+@pytest.mark.skipif(node is None, reason="node not installed")
+def test_edge_credit_pool_issues_and_redeems_interoperably(tmp_path, pool):
+    """The Worker issues and redeems RFC 9474 credits with a D1 ledger shim; a
+    token bought at the edge redeems in the Python pool (same key) and vice versa."""
+    from timesfm3.serving.credits import CreditPool as _CP  # noqa: F401
+    key_file = str(tmp_path / "shared.json")
+    py_pool = CreditPool(key_file=key_file, bits=1024)
+    jwk = json.load(open(key_file))
+    w = CreditWallet(); pend = w.prepare(py_pool.describe(), 1)
+    py_pool_sig = py_pool.sign_blinded([b64e(p.blinded) for p in pend]); w.finish(pend, py_pool_sig)
+    py_token = w.take(1)
+    script = r"""
+import worker from './cloudflare/src/worker.js';
+let input=''; process.stdin.on('data',d=>input+=d); process.stdin.on('end',async()=>{
+  const p = JSON.parse(input);
+  // minimal D1 shim: INSERT OR IGNORE spent, stats upsert, SUM query, DELETE rollback
+  const spent = new Map(), stats = new Map();
+  const stmt = (sql) => ({ bind: (...a) => ({ run: async () => run(sql, a), first: async () => first(sql, a) }), run: async () => run(sql, []), first: async () => first(sql, []) });
+  const run = async (sql, a) => { if (sql.startsWith('INSERT OR IGNORE INTO spent')) { if (spent.has(a[0])) return { meta: { changes: 0 } }; spent.set(a[0], a); return { meta: { changes: 1 } }; }
+    if (sql.startsWith('DELETE FROM spent')) { spent.delete(a[0]); return { meta: { changes: 1 } }; }
+    if (sql.startsWith('INSERT INTO stats')) { const s = stats.get(a[0]) || { issued: 0, redeemed: 0 }; if (sql.includes('issued = issued')) s.issued += a[1]; else s.redeemed += a[1]; stats.set(a[0], s); return { meta: { changes: 1 } }; } return { meta: {} }; };
+  const first = async (sql) => { let i = 0, r = 0; for (const s of stats.values()) { i += s.issued; r += s.redeemed; } return { issued: i, redeemed: r }; };
+  const DB = { prepare: stmt, batch: async (stmts) => Promise.all(stmts.map((s) => s.run())) };
+  const env = { CREDITS_PRIVATE_JWK: JSON.stringify(p.jwk), CREDITS_DB: DB, ASSETS: { fetch: async () => new Response('nf', {status: 404}) } };
+  const ctx = { waitUntil() {} };
+  const get = (path, headers={}) => worker.fetch(new Request('https://edge.test' + path, { headers }), env, ctx);
+  const post = (path, body, headers={}) => worker.fetch(new Request('https://edge.test' + path, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) }), env, ctx);
+  const out = {};
+  const info = await (await get('/v1/credits/pool')).json(); out.pool = { suite: info.suite, kid: info.kid, keys: info.keys.length };
+  // buy 10 with blinded messages prepared by the caller (python), no x402 configured -> free
+  const buy = await post('/v1/credits/buy/10', { blinded: p.blinded }); out.buy = { status: buy.status, kid: (await buy.clone().json()).kid, sigs: (await buy.json()).blind_signatures };
+  const body = { targets: [{ values: Array.from({length: 32}, (_, i) => i) }], horizon: 2, model: 'ewma' };
+  const r1 = await post('/v1/forecast', body, { 'X-Credit': p.py_token }); out.pyTokenAtEdge = { status: r1.status, spent: r1.headers.get('x-credits-spent') };
+  const r2 = await post('/v1/forecast', body, { 'X-Credit': p.py_token }); out.pyTokenAgain = { status: r2.status, detail: (await r2.json()).detail };
+  const r3 = await post('/v1/forecast', body, { 'X-Credit': 'bad.token.x' }); out.bad = r3.status;
+  const r4 = await post('/v1/backtest', { series: [{ values: Array.from({length: 200}, (_, i) => i) }], context: 64, horizon: 8, windows: 3, models: ['ewma'] }, { 'X-Credit': p.py_token }); out.short = r4.status;
+  out.stats = (await (await get('/v1/credits/pool')).json()).pool;
+  out.pricing = (await (await get('/v1/pricing')).json()).credits.enabled;
+  console.log(JSON.stringify(out));
+});
+"""
+    w2 = CreditWallet(); pend2 = w2.prepare(py_pool.describe(), 10)
+    payload = {"jwk": jwk, "blinded": [b64e(p.blinded) for p in pend2], "py_token": py_token}
+    res = subprocess.run([node, "--input-type=module", "-e", script], input=json.dumps(payload), capture_output=True, text=True)
+    assert res.returncode == 0, res.stderr
+    out = json.loads(res.stdout.strip().splitlines()[-1])
+    assert out["pool"] == {"suite": "RSABSSA-SHA384-PSSZERO-Deterministic", "kid": py_pool.kid, "keys": 1}
+    assert out["buy"]["status"] == 200 and out["buy"]["kid"] == py_pool.kid
+    # tokens issued by the Worker verify and redeem in the Python pool
+    assert w2.finish(pend2, out["buy"]["sigs"]) == 10
+    assert py_pool.redeem(w2.take(1), 1) == (True, "")
+    # a Python-issued token redeems at the edge exactly once
+    assert out["pyTokenAtEdge"] == {"status": 200, "spent": "1"}
+    assert out["pyTokenAgain"]["status"] == 402 and "already spent" in out["pyTokenAgain"]["detail"]
+    assert out["bad"] == 402 and out["short"] == 402
+    assert out["stats"] == {"issued": 10, "redeemed": 1, "outstanding": 9}
+    assert out["pricing"] is True
 
 
 @pytest.mark.skipif(node is None, reason="node not installed")
