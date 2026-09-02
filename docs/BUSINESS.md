@@ -99,8 +99,8 @@ this release (`X-Usage-Points`, `/v1/usage`, per-key monthly quotas):
 | **Cloud Starter** | $49/month | Hosted API, 2M forecast points/month, 3 keys | `TIMESFM3_API_KEYS_FILE` quotas |
 | **Cloud Team** | $299/month | 20M points/month, anomaly + volatility endpoints, fine-tuning jobs, 10 keys | same, plus `timesfm3 finetune` as a job |
 | **Overage** | $0.02 per 1,000 points | Falls between Vertex's $0.02–$0.20/1,000 predictions and ForecastAPI's ~$2–3/1,000 calls | metering headers |
-| **Prepaid credit pool** | $0.004 per credit in batches of 10/25/100 | Blind-signed, unlinkable tokens: the privacy tier for quant and enterprise buyers whose query pattern is the secret; sold via x402 or plans | `timesfm3/credits.py`, `timesfm3/serving/credits.py` |
-| **Pay-per-call (x402)** | $0.005 forecast · $0.005 volatility · $0.01 anomalies · $0.02 backtest, in USDC | No account, no invoice: the HTTP 402 flow AI agents already speak; settles on Base in seconds | `timesfm3/serving/x402.py`, `cloudflare/src/x402.js` |
+| **Prepaid credit pool** | $0.004 per token, singly or in batches of 10/25/100 | Privacy Pass tokens (RFC 9578): the privacy tier for quant and enterprise buyers whose query pattern is the secret; sold via x402 or plans | `timesfm3/privacypass.py`, `timesfm3/serving/privacypass.py`, `cloudflare/src/privacy-pass.js` |
+| **Pay-per-call (x402)** | $0.005 forecast · $0.005 volatility · $0.01 anomalies · $0.02 backtest, in USDC | No account, no invoice: the HTTP 402 flow AI agents already speak; settles on Base in seconds | `timesfm3/serving/x402.py`, `@x402/hono` in `cloudflare/src/index.js` |
 | **Enterprise / self-hosted** | $2,000–$8,000/month | Private image, SSO, support SLA, larger checkpoints (`base` config trained on GPU), fine-tuning on their corpus, commercial warranty on weights | Docker + `TIMESFM3_MODEL_DIR` + NOTICE |
 
 A **forecast point** (one series × one horizon step) is the billable unit

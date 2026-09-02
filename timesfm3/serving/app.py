@@ -24,6 +24,7 @@ response carries ``X-Usage-Points`` (charged) and ``X-Usage-Remaining``.
 
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
@@ -42,11 +43,9 @@ from ..tabular import future_timestamps, infer_step, parse_freq
 from . import schemas
 from .auth import ANONYMOUS, ApiKey, KeyStore, QuotaExceeded, UsageMeter
 from .registry import ModelRegistry
-from ..credits import SUITE as _SUITE
-from .credits import CREDIT_IDENTITY, DENOMINATIONS, POINTS_PER_CREDIT, CreditPool, credit_cost
-
-SUITE_NAME = _SUITE.name
-from .x402 import X402Config, X402Gate, paid_identity
+from .. import privacypass as PP
+from .privacypass import DENOMINATIONS, POINTS_PER_TOKEN, TOKEN_IDENTITY, PrivacyPassService
+from .x402 import PRICED_ROUTES, X402Config, X402Gate, paid_identity
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
@@ -121,7 +120,7 @@ def create_app(
     meter: UsageMeter | None = None,
     x402: X402Config | None = None,
     x402_from_env: bool = True,
-    credits: CreditPool | None = None,
+    privacy_pass: PrivacyPassService | None = None,
 ):
     """Builds the service. Reads ``TIMESFM3_*`` env vars for anything omitted.
 
@@ -131,12 +130,14 @@ def create_app(
     registry = registry or ModelRegistry.from_env()
     keys = keys or KeyStore.from_env(api_key)
     x402 = x402 if x402 is not None else (X402Config.from_env() if x402_from_env else None)
-    if credits is None:
-        credits = CreditPool(
-            key_file=os.environ.get("TIMESFM3_CREDITS_KEY_FILE") or None,
-            ledger_file=os.environ.get("TIMESFM3_CREDITS_LEDGER_FILE") or None,
-            price_per_credit_usd=float(os.environ.get("TIMESFM3_CREDITS_PRICE", "0.004")),
-            old_key_files=[p for p in os.environ.get("TIMESFM3_CREDITS_OLD_KEYS", "").split(",") if p.strip()],
+    if privacy_pass is None:
+        privacy_pass = PrivacyPassService(
+            key_file=os.environ.get("TIMESFM3_PRIVACY_PASS_KEY_FILE") or None,
+            ledger_file=os.environ.get("TIMESFM3_PRIVACY_PASS_LEDGER_FILE") or None,
+            price_per_token_usd=float(os.environ.get("TIMESFM3_PRIVACY_PASS_PRICE", "0.004")),
+            old_key_files=[p for p in os.environ.get("TIMESFM3_PRIVACY_PASS_OLD_KEYS", "").split(",") if p.strip()],
+            issuer_name=os.environ.get("TIMESFM3_PRIVACY_PASS_ISSUER_NAME") or None,
+            origin_name=os.environ.get("TIMESFM3_PRIVACY_PASS_ORIGIN") or None,
         )
     meter = meter or UsageMeter(os.environ.get("TIMESFM3_USAGE_FILE") or None)
     max_series = max_series or int(os.environ.get("TIMESFM3_MAX_SERIES", "64"))
@@ -156,22 +157,21 @@ def create_app(
     app.state.keys = keys
     app.state.meter = meter
     app.state.x402 = x402
-    app.state.credits = credits
+    app.state.privacy_pass = privacy_pass
+
+    def _priced(request: Request) -> bool:
+        return f"{request.method} {request.url.path}" in PRICED_ROUTES
 
     async def require_key(request: Request) -> ApiKey:
-        header = request.headers.get("x-credit")
-        if header:
-            cost = credit_cost(request.method, request.url.path)
-            if cost is None:
-                raise HTTPException(status_code=400, detail="This endpoint does not take credits.")
-            ok, why = credits.redeem(header, cost)
+        auth = request.headers.get("authorization", "")
+        if auth.lower().startswith("privatetoken"):
+            if not _priced(request):
+                raise HTTPException(status_code=400, detail="This endpoint does not take PrivateToken credentials.")
+            ok, why = privacy_pass.redeem(auth, request.url.netloc)
             if not ok:
-                raise HTTPException(
-                    status_code=402, detail=f"Credit rejected: {why}. Buy credits at POST /v1/credits/buy/{{n}}.",
-                    headers={"x-credit-cost": str(cost)},
-                )
-            request.scope.setdefault("state", {})["credits_spent"] = cost
-            return CREDIT_IDENTITY
+                raise HTTPException(status_code=401, detail=f"PrivateToken rejected: {why}",
+                                    headers={"WWW-Authenticate": privacy_pass.challenge_header(request.url.netloc)})
+            return TOKEN_IDENTITY
         paid = paid_identity(request, x402)
         if paid is not None:
             return paid
@@ -183,7 +183,8 @@ def create_app(
             header = header or auth[7:].strip()
         found = keys.lookup(header)
         if found is None:
-            raise HTTPException(status_code=401, detail="Invalid or missing API key.")
+            hdrs = {"WWW-Authenticate": privacy_pass.challenge_header(request.url.netloc)} if _priced(request) else None
+            raise HTTPException(status_code=401, detail="Invalid or missing API key.", headers=hdrs)
         return found
 
     def charge(key: ApiKey, points: int, response: Response) -> None:
@@ -248,41 +249,67 @@ def create_app(
         )
 
     @app.get("/v1/pricing", tags=["ops"])
-    async def pricing() -> dict:
-        """How to pay: plans via API keys, x402 pay-per-call, or unlinkable prepaid credits."""
-        c = credits.describe()
+    async def pricing(request: Request) -> dict:
+        """How to pay: plans via API keys, x402 pay-per-call, or Privacy Pass tokens."""
         return {
             "plans": {"keys": keys.names() if not keys.open else [], "unit": "forecast points",
                       "note": "Send X-API-Key; see /v1/usage for quota."},
             "x402": x402.describe() if x402 else {"enabled": False},
-            "credits": {"denominations": c["denominations"], "price_per_credit_usd": c["price_per_credit_usd"],
-                        "costs": c["costs"], "how": "GET /v1/credits/pool, blind serials, POST /v1/credits/buy/{n}, "
-                        "then send X-Credit: token[,token...]. Tokens are unlinkable to the purchase."},
+            "privacy_pass": {**privacy_pass.describe(), "challenge": "GET /token-request/challenge",
+                             "www_authenticate": privacy_pass.challenge_header(request.url.netloc)},
         }
 
-    @app.get("/v1/credits/pool", tags=["credits"])
-    async def credits_pool() -> dict:
-        """Public key and terms of the credit pool (no auth: anyone may buy)."""
-        return credits.describe()
+    @app.get(PP.ISSUER_DIRECTORY_PATH, tags=["privacy-pass"], include_in_schema=True)
+    async def pp_directory() -> Response:
+        """RFC 9578 issuer directory: keys (base64url SPKI) and the request URI."""
+        return Response(json.dumps(privacy_pass.directory()), media_type=PP.MEDIA_DIRECTORY,
+                        headers={"cache-control": "public, max-age=300"})
 
-    @app.post("/v1/credits/buy/{count}", tags=["credits"])
-    async def credits_buy(count: int, body: dict, response: Response,
-                          key: ApiKey = Depends(require_key)) -> dict:
-        """Blind-signs ``count`` blinded serials; paid via x402 or a plan."""
-        if count not in DENOMINATIONS:
-            raise HTTPException(status_code=404, detail=f"Denominations: {list(DENOMINATIONS)}")
-        blinded = body.get("blinded") if isinstance(body, dict) else None
-        if not isinstance(blinded, list) or len(blinded) != count:
-            raise HTTPException(status_code=422, detail=f"Body must be {{\"blinded\": [<{count} base64url blinded messages>]}}.")
-        if key is CREDIT_IDENTITY:
-            raise HTTPException(status_code=400, detail="Credits cannot buy credits.")
-        if key.name != "x402":  # plan holders (and open mode) pay in points; x402 paid already
-            charge(key, count * POINTS_PER_CREDIT, response)
+    @app.get("/token-request/challenge", tags=["privacy-pass"])
+    async def pp_challenge(request: Request) -> Response:
+        """Always answers 401 with the PrivateToken challenge (discoverable challenge)."""
+        return Response(json.dumps({"detail": "Present a PrivateToken (see WWW-Authenticate) or buy tokens at POST /token-request."}),
+                        status_code=401, media_type="application/json",
+                        headers={"WWW-Authenticate": privacy_pass.challenge_header(request.url.netloc)})
+
+    @app.get("/token-request/stats", tags=["privacy-pass"])
+    async def pp_stats() -> dict:
+        return privacy_pass.describe()
+
+    async def _issue(request: Request, response: Response, key: ApiKey, expected: int | None) -> Response:
+        if key is TOKEN_IDENTITY:
+            raise HTTPException(status_code=400, detail="Tokens cannot buy tokens.")
+        body = await request.body()
+        ct = request.headers.get("content-type", "").split(";")[0].strip()
         try:
-            sigs = await run_in_threadpool(credits.sign_blinded, blinded)
+            if expected is None and ct == PP.MEDIA_REQUEST:
+                if key.name != "x402":
+                    charge(key, POINTS_PER_TOKEN, response)
+                out = await run_in_threadpool(privacy_pass.issue, body)
+                return Response(out, media_type=PP.MEDIA_RESPONSE, headers={**response.headers, "cache-control": "no-store"})
+            if ct != PP.MEDIA_BATCH_REQUEST:
+                raise HTTPException(status_code=415, detail=f"Content-Type must be {PP.MEDIA_REQUEST} or {PP.MEDIA_BATCH_REQUEST}.")
+            n = expected if expected is not None else PP.count_batched_request(body)
+            if key.name != "x402":
+                charge(key, n * POINTS_PER_TOKEN, response)
+            out, issued = await run_in_threadpool(privacy_pass.issue_batch, body, expected)
+            return Response(out, media_type=PP.MEDIA_BATCH_RESPONSE,
+                            headers={**response.headers, "cache-control": "no-store", "x-tokens-issued": str(issued)})
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e))
-        return {"kid": credits.kid, "suite": SUITE_NAME, "count": count, "blind_signatures": sigs}
+
+    @app.post("/token-request", tags=["privacy-pass"])
+    async def pp_token_request(request: Request, response: Response, key: ApiKey = Depends(require_key)) -> Response:
+        """RFC 9578 issuance (single TokenRequest, or a generic batch by Content-Type)."""
+        return await _issue(request, response, key, None)
+
+    @app.post("/token-request/batch/{count}", tags=["privacy-pass"])
+    async def pp_token_request_batch(count: int, request: Request, response: Response,
+                                     key: ApiKey = Depends(require_key)) -> Response:
+        """Fixed-size batched issuance so x402 can price it statically."""
+        if count not in DENOMINATIONS:
+            raise HTTPException(status_code=404, detail=f"Batch denominations: {list(DENOMINATIONS)}")
+        return await _issue(request, response, key, count)
 
     @app.get("/metrics", response_class=PlainTextResponse, tags=["ops"])
     async def prometheus() -> str:
@@ -472,7 +499,13 @@ def create_app(
             )
 
     if x402 is not None:
-        return X402Gate(app, keys, x402)
+        def _challenge(scope) -> str | None:
+            if f"{scope.get('method')} {scope.get('path')}" not in PRICED_ROUTES:
+                return None
+            host = dict(scope.get("headers", [])).get(b"host", b"").decode() or "localhost"
+            return privacy_pass.challenge_header(host)
+
+        return X402Gate(app, keys, x402, challenge_header=_challenge)
     return app
 
 

@@ -18,7 +18,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from .credits import CreditWallet, b64e
+from .credits import CreditWallet
 from .forecaster import ForecastResult
 
 
@@ -56,8 +56,8 @@ class ForecastClient:
         req.add_header("accept", "application/json")
         if self.api_key:
             req.add_header("x-api-key", self.api_key)
-        elif self.credits is not None and method == "POST" and not path.startswith("/v1/credits/"):
-            req.add_header("x-credit", self.credits.take(CreditWallet.cost_of(method, path)))
+        elif self.credits is not None and CreditWallet.is_priced(method, path):
+            req.add_header("authorization", self.credits.take())
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 return json.loads(resp.read().decode())
@@ -69,6 +69,20 @@ class ForecastClient:
                 detail = body
             raise ForecastServiceError(e.code, str(detail)) from None
 
+    def _request_raw(self, method: str, path: str, data: bytes | None = None,
+                     headers: dict | None = None) -> tuple[int, dict, bytes]:
+        """Bytes in / (status, headers, bytes) out; 4xx/5xx are returned, not raised."""
+        req = urllib.request.Request(self.base_url + path, data=data, method=method)
+        for k, v in (headers or {}).items():
+            req.add_header(k, v)
+        if self.api_key:
+            req.add_header("x-api-key", self.api_key)
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                return resp.status, {k.lower(): v for k, v in resp.headers.items()}, resp.read()
+        except urllib.error.HTTPError as e:
+            return e.code, {k.lower(): v for k, v in e.headers.items()}, e.read()
+
     # -- API -------------------------------------------------------------------
 
     def health(self) -> dict:
@@ -77,24 +91,27 @@ class ForecastClient:
     def pricing(self) -> dict:
         return self._request("GET", "/v1/pricing")
 
-    def buy_credits(self, count: int, wallet: CreditWallet | None = None) -> int:
-        """Buys ``count`` unlinkable credits into ``wallet`` (default: this client's).
+    def models(self) -> list[dict]:
+        return self._request("GET", "/v1/models")
 
-        Paid with the client's API key (plan points). To pay with x402
-        instead, wrap the purchase in an x402-capable HTTP client and call
-        the endpoints directly; see docs/PRIVACY.md.
-        """
+    def buy_credits(self, count: int, wallet: CreditWallet | None = None) -> int:
+        """Buys ``count`` Privacy Pass tokens into ``wallet`` (default: this client's),
+        paid with the client's API key. For x402 use ``timesfm3 credits buy --private-key``."""
+        from .privacypass import MEDIA_BATCH_REQUEST, MEDIA_REQUEST
+
         wallet = wallet or self.credits
         if wallet is None:
             raise ValueError("a CreditWallet is required")
-        pool = self._request("GET", "/v1/credits/pool")
-        pending = wallet.prepare(pool, count)
-        res = self._request("POST", f"/v1/credits/buy/{count}",
-                            {"blinded": [b64e(p.blinded) for p in pending]})
-        return wallet.finish(pending, res["blind_signatures"])
-
-    def models(self) -> list[dict]:
-        return self._request("GET", "/v1/models")
+        _, hdrs, _ = self._request_raw("GET", "/token-request/challenge")
+        www = hdrs.get("www-authenticate", "")
+        if not www:
+            raise ForecastServiceError(500, "service did not offer a PrivateToken challenge")
+        body, pending, batched = wallet.prepare(www, count)
+        path = f"/token-request/batch/{count}" if batched else "/token-request"
+        status, _, out = self._request_raw("POST", path, body, {"content-type": MEDIA_BATCH_REQUEST if batched else MEDIA_REQUEST})
+        if status != 200:
+            raise ForecastServiceError(status, out.decode(errors="replace")[:300])
+        return wallet.finish(pending, out, batched)
 
     def forecast_raw(
         self,

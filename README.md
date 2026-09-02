@@ -110,13 +110,15 @@ timesfm3/
 scripts/
   train_starter.py        # reproduces the bundled starter model
 cloudflare/
-  src/worker.js           # edge-native API (classical models in JS) or gateway; leads; rate limit
+  src/index.js            # Hono Worker: official @x402/hono paywall, Privacy Pass, rate limit, static assets
+  src/privacy-pass.js     # Privacy Pass issuer + origin (RFC 9578) via @cloudflare/privacypass-ts, D1 nullifiers
+  src/edge-api.js         # edge-native API (classical models in JS) or gateway to a self-hosted service
   public/index.html       # landing page with live demo, pricing, waitlist
   public/app/index.html   # dashboard: TimesFM-3 in the browser (ONNX Runtime) + local backtests
   public/js/forecast.js   # JS port of baselines, bands, DM/bootstrap/Holm, backtest, anomalies
   public/js/timesfm3-onnx.js  # browser wrapper reproducing the Python forecaster around the ONNX graph
   public/models/          # starter-small.onnx (21 MB) + model card, from scripts/export_onnx.py
-  wrangler.jsonc          # KV + rate-limit bindings; `make edge-dev`, `make edge-deploy`
+  wrangler.jsonc          # KV, D1 + rate-limit bindings; `make edge-dev`, `make edge-deploy`
 examples/
   forecast_example.py     # API demo: multivariate targets + covariates
   plot_forecast.py        # point + q10-q90 band vs ground truth

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.8.0 — built on Cloudflare's own primitives
+
+- Credits are now standard **Privacy Pass** tokens (RFC 9576/9577/9578,
+  token type `0x0002` Blind RSA): `timesfm3/privacypass.py` (challenges,
+  token requests/responses, generic batched issuance, issuer directory,
+  `PrivateToken` HTTP auth) and `timesfm3/serving/privacypass.py` (issuer +
+  origin with lossless rotation). Endpoints: `/.well-known/private-token-issuer-directory`,
+  `GET /token-request/challenge`, `POST /token-request`,
+  `POST /token-request/batch/{10|25|100}`, `GET /token-request/stats`;
+  priced calls answer `401 WWW-Authenticate: PrivateToken ...` and accept
+  `Authorization: PrivateToken token="..."`. `timesfm3.credits.CreditWallet`,
+  the client and `timesfm3 credits buy|status` speak the standard protocol.
+  Replaces the bespoke `/v1/credits/*` and `X-Credit` API.
+- Cloudflare Worker rewritten on **Hono** (`cloudflare/src/index.js`) with the
+  official `@x402/hono` paywall middleware and Privacy Pass issuance and
+  redemption through `@cloudflare/privacypass-ts` (`cloudflare/src/privacy-pass.js`);
+  D1 binding `PRIVACY_PASS_DB`, secret `PRIVACY_PASS_PRIVATE_JWK`, vars
+  `PRIVACY_PASS_OLD_PUBLIC_JWKS`, `PRIVACY_PASS_ISSUER_NAME`,
+  `PRIVACY_PASS_ORIGIN`. Tokens issued by the Python service and the Worker
+  are interchangeable; interop is tested in every issuer/client/origin
+  combination, including against Cloudflare's library.
+- Configuration renamed: `TIMESFM3_PRIVACY_PASS_{KEY_FILE,OLD_KEYS,LEDGER_FILE,PRICE,ORIGIN,ISSUER_NAME}`.
+
 ## 0.7.0 — standard blind signatures, key rotation, credits at the edge
 
 - `timesfm3/blindrsa.py`: RFC 9474 RSA blind signatures (all four suites),

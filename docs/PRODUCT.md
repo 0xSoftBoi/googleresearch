@@ -41,7 +41,7 @@ curl -s -X POST localhost:8000/v1/forecast -H 'content-type: application/json' \
 | `timesfm3 finetune` | Fine-tune the starter on your CSV, validate on its held-out tail, print the same DM-tested backtest |
 | API keys & metering | Named keys with plans and monthly forecast-point quotas, `/v1/usage`, usage headers, 429 on exhaustion |
 | x402 pay-per-call | Anonymous callers and AI agents pay per request in USDC over HTTP 402; no signup, settled on Base |
-| Privacy pools | Prepaid credits are blind-signed, so calls cannot be linked to the buyer or to each other; funding via Privacy Pools withdrawals documented in [docs/PRIVACY.md](PRIVACY.md) |
+| Privacy pools | Prepaid credits are standard Privacy Pass tokens (RFC 9578), so calls cannot be linked to the buyer or to each other; funding via Privacy Pools withdrawals documented in [docs/PRIVACY.md](PRIVACY.md) |
 | Apache-2.0 code **and weights** | Google's TimesFM-3 weights are non-commercial; ours are self-trained (see `NOTICE`) |
 | `timesfm3` CLI | forecast / backtest / anomalies / finetune on CSV files, list models, package checkpoints, train |
 | `timesfm3.client` | Dependency-free Python client returning numpy arrays |
@@ -367,19 +367,24 @@ The Cloudflare Worker enforces the same paywall in gateway mode (anonymous
 callers pay, bring-your-own-key callers are metered upstream); set
 `X402_PAY_TO` in `wrangler.jsonc`.
 
-## Unlinkable prepaid credits
+## Unlinkable prepaid credits (Privacy Pass)
 
 Buyers who do not want their query pattern tied to a wallet or key buy a
-batch of blind-signed credits once (with x402 or a plan) and spend
-single-use tokens the service cannot link to the purchase or to each other.
-`GET /v1/credits/pool` gives the pool key, `POST /v1/credits/buy/{10|25|100}`
-signs blinded serials ($0.004 per credit), and `X-Credit: token[,token]`
-pays for a call (forecast 1, volatility 1, anomalies 2, backtest 4). Tokens
-are RFC 9474 blind signatures, interoperable with the Cloudflare Worker's
-edge pool and with any conforming client library. The CLI
-(`timesfm3 credits buy`) and `ForecastClient(credits=CreditWallet(...))` do
-the blinding. Threat model, on-chain Privacy Pools funding and operator
-notes are in [docs/PRIVACY.md](PRIVACY.md).
+batch of **Privacy Pass** tokens once (RFC 9576/9577/9578, Blind RSA token
+type `0x0002`, paid with x402 or a plan) and spend single-use tokens the
+service cannot link to the purchase or to each other. A priced call
+answers `401 WWW-Authenticate: PrivateToken challenge=..., token-key=...`;
+`POST /token-request` issues one token ($0.004) and
+`POST /token-request/batch/{10|25|100}` a batch for one payment;
+`Authorization: PrivateToken token="..."` pays for one call (forecast,
+volatility, anomalies or backtest). Keys are published at
+`GET /.well-known/private-token-issuer-directory`, pool statistics at
+`GET /token-request/stats`. The same tokens work at the Cloudflare Worker,
+which runs Cloudflare's own `@cloudflare/privacypass-ts`, and with any
+conforming Privacy Pass client. The CLI (`timesfm3 credits buy`) and
+`ForecastClient(credits=CreditWallet(...))` do the blinding. Threat model,
+on-chain Privacy Pools funding and operator notes are in
+[docs/PRIVACY.md](PRIVACY.md).
 
 ## Configuration
 
@@ -394,10 +399,12 @@ notes are in [docs/PRIVACY.md](PRIVACY.md).
 | `TIMESFM3_X402_FACILITATOR` | by network | Facilitator base URL (`/verify`, `/settle`) |
 | `TIMESFM3_X402_FACILITATOR_AUTH` | unset | `Authorization` header for the facilitator (CDP) |
 | `TIMESFM3_X402_PRICES` | see above | JSON overrides, e.g. `{"POST /v1/forecast": "$0.01"}` |
-| `TIMESFM3_CREDITS_KEY_FILE` | unset (ephemeral key) | Private JWK for the credit pool (`scripts/credits_keygen.py`); shared with the Worker |
-| `TIMESFM3_CREDITS_OLD_KEYS` | unset | Comma-separated older key files that stay redeemable after rotation |
-| `TIMESFM3_CREDITS_LEDGER_FILE` | unset | Persist spent serials and pool counters |
-| `TIMESFM3_CREDITS_PRICE` | `0.004` | USD per credit (x402 prices for the denominations are set via `TIMESFM3_X402_PRICES`) |
+| `TIMESFM3_PRIVACY_PASS_KEY_FILE` | unset (ephemeral key) | Private JWK for the Privacy Pass issuer (`scripts/credits_keygen.py`); shared with the Worker |
+| `TIMESFM3_PRIVACY_PASS_OLD_KEYS` | unset | Comma-separated older key files that stay redeemable after rotation |
+| `TIMESFM3_PRIVACY_PASS_LEDGER_FILE` | unset | Persist spent nonces and issued/redeemed counters |
+| `TIMESFM3_PRIVACY_PASS_PRICE` | `0.004` | USD per token (x402 prices for `/token-request` are set via `TIMESFM3_X402_PRICES`) |
+| `TIMESFM3_PRIVACY_PASS_ORIGIN` | request `Host` | Origin name bound into challenges; set to the public host behind a proxy |
+| `TIMESFM3_PRIVACY_PASS_ISSUER_NAME` | origin name | Issuer name in challenges and the issuer directory |
 | `TIMESFM3_CHECKPOINTS` | unset | Comma-separated `[name=]path` checkpoints to serve |
 | `TIMESFM3_MODEL_DIR` | unset (`/models` in Docker) | Serve every `*.pt` in this directory |
 | `TIMESFM3_DEFAULT_MODEL` | last checkpoint added, else `ewma` | Model used when a request omits `model` |

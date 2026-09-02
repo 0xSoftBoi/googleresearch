@@ -5,7 +5,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "timesfm3-edge",
-  "main": "src/worker.js",
+  "main": "src/index.js",
+  "compatibility_flags": ["nodejs_compat"],
   "compatibility_date": "2026-09-01",
   "workers_dev": true,
   "observability": { "enabled": true },
@@ -22,10 +23,10 @@
     // Created 2026-09-02 in the connected account ("timesfm3-edge"); holds leads only.
     { "binding": "EDGE_KV", "id": "1df8ae6bdb5a41eabdd00beb32118817" }
   ],
-  // Credit-pool ledger (nullifiers + counters). Created 2026-09-02 in the connected
-  // account; `npx wrangler d1 migrations apply timesfm3-credits` (add --local for dev).
+  // Privacy Pass double-spend ledger (token nonces + counters). Created 2026-09-02 in the
+  // connected account; `npx wrangler d1 migrations apply timesfm3-credits` (add --local for dev).
   "d1_databases": [
-    { "binding": "CREDITS_DB", "database_name": "timesfm3-credits", "database_id": "10503e65-8f18-4803-890f-809025735489", "migrations_dir": "migrations" }
+    { "binding": "PRIVACY_PASS_DB", "database_name": "timesfm3-credits", "database_id": "10503e65-8f18-4803-890f-809025735489", "migrations_dir": "migrations" }
   ],
   // Per-IP limit through the Workers rate-limit binding (free; no KV writes).
   "ratelimits": [
@@ -45,9 +46,11 @@
     "X402_PAY_TO": "",
     "X402_NETWORK": "eip155:84532",
     "X402_PAYWALL_EDGE_NATIVE": "0",
-    // Unlinkable prepaid credits at the edge: set the secret CREDITS_PRIVATE_JWK
-    // (scripts/credits_keygen.py) and, after rotation, list old public JWKs here.
-    "CREDITS_OLD_PUBLIC_JWKS": "[]",
+    // Privacy Pass issuer (RFC 9578): set the secret PRIVACY_PASS_PRIVATE_JWK
+    // (scripts/credits_keygen.py); after rotation list old public JWKs here.
+    "PRIVACY_PASS_OLD_PUBLIC_JWKS": "[]",
+    "PRIVACY_PASS_ISSUER_NAME": "",
+    "PRIVACY_PASS_ORIGIN": "",
     "CREDITS_PRICE_USD": "0.004"
   }
   // Custom domain (uncomment after adding the zone to the account):

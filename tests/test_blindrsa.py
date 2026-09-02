@@ -51,7 +51,7 @@ BLINDRSA_JS = "cloudflare/node_modules/@cloudflare/blindrsa-ts/lib/src/index.js"
 @pytest.mark.skipif(node is None or not os.path.exists(BLINDRSA_JS), reason="node / blindrsa-ts not installed")
 def test_interop_with_cloudflare_blindrsa_ts(tmp_path):
     """Signatures issued by either implementation verify in the other."""
-    from timesfm3.serving.credits import generate_private_jwk
+    from timesfm3.serving.privacypass import generate_private_jwk
 
     suite = B.RSABSSA_SHA384_PSSZERO_DETERMINISTIC
     jwk = generate_private_jwk(bits=1024)

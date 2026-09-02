@@ -233,15 +233,15 @@ def cmd_finetune(args) -> int:
 
 def cmd_credits(args) -> int:
     from .client import ForecastClient
-    from .credits import CreditWallet, b64e, issuing_key
+    from .credits import CreditWallet
+    from .privacypass import MEDIA_BATCH_REQUEST, MEDIA_REQUEST
 
     wallet = CreditWallet(args.wallet)
     if args.action == "status":
-        print(f"{args.wallet}: {len(wallet)} unspent credit(s)"
-              + (f", pool key {issuing_key(wallet.pool)['kid']}" if wallet.pool else ""))
+        print(f"{args.wallet}: {len(wallet)} unspent Privacy Pass token(s)")
         return 0
     if args.private_key:
-        # Pay for the batch with x402 from the given EVM key (needs `pip install "x402[evm]"`).
+        # Pay for the batch with x402 from the given EVM key (needs `pip install "timesfm3[x402]"`).
         try:
             from eth_account import Account
             from x402 import x402ClientSync
@@ -253,22 +253,24 @@ def cmd_credits(args) -> int:
             return 2
         client = x402ClientSync().register("eip155:*", ExactEvmClientScheme(EthAccountSigner(Account.from_key(args.private_key))))
         session = x402_requests(client)
-        pool = session.get(f"{args.api}/v1/credits/pool", timeout=60).json()
-        pending = wallet.prepare(pool, args.count)
-        r = session.post(f"{args.api}/v1/credits/buy/{args.count}",
-                         json={"blinded": [b64e(p.blinded) for p in pending]}, timeout=120)
+        probe = session.get(f"{args.api}/token-request/challenge", timeout=60)
+        www = probe.headers.get("www-authenticate", "")
+        if not www:
+            print("error: service did not offer a PrivateToken challenge", file=sys.stderr)
+            return 1
+        body, pending, batched = wallet.prepare(www, args.count)
+        path = "/token-request" if not batched else f"/token-request/batch/{args.count}"
+        r = session.post(f"{args.api}{path}", data=body, headers={"content-type": MEDIA_BATCH_REQUEST if batched else MEDIA_REQUEST}, timeout=120)
         if r.status_code != 200:
             print(f"error: HTTP {r.status_code}: {r.text[:300]}", file=sys.stderr)
             return 1
-        added = wallet.finish(pending, r.json()["blind_signatures"])
-        paid = r.headers.get("PAYMENT-RESPONSE", "")
-        print(f"bought {added} credits with x402 ({pool['price_per_credit_usd'] * added:.4f} USD)"
-              + ("; settlement receipt in PAYMENT-RESPONSE" if paid else ""))
+        added = wallet.finish(pending, r.content, batched)
+        print(f"bought {added} Privacy Pass token(s) with x402" + ("; settlement receipt in PAYMENT-RESPONSE" if r.headers.get("PAYMENT-RESPONSE") else ""))
     else:
         fc = ForecastClient(args.api, api_key=args.api_key, credits=wallet)
         added = fc.buy_credits(args.count, wallet)
-        print(f"bought {added} credits" + (" on your plan" if args.api_key else ""))
-    print(f"{args.wallet}: {len(wallet)} unspent credit(s); use ForecastClient(credits=CreditWallet('{args.wallet}'))")
+        print(f"bought {added} Privacy Pass token(s)" + (" on your plan" if args.api_key else ""))
+    print(f"{args.wallet}: {len(wallet)} unspent token(s); use ForecastClient(credits=CreditWallet('{args.wallet}'))")
     return 0
 
 
@@ -361,10 +363,10 @@ def build_parser() -> argparse.ArgumentParser:
     ft.add_argument("--device", default=None)
     ft.set_defaults(func=cmd_finetune)
 
-    cr = sub.add_parser("credits", help="Buy / inspect unlinkable prepaid credits.")
+    cr = sub.add_parser("credits", help="Buy / inspect Privacy Pass tokens (unlinkable prepaid credits).")
     cr.add_argument("action", choices=["buy", "status"])
     cr.add_argument("--api", default="http://localhost:8000")
-    cr.add_argument("--count", type=int, default=25, help="10, 25 or 100")
+    cr.add_argument("--count", type=int, default=25, help="1 (single) or a batch of 10, 25, 100")
     cr.add_argument("--api-key", default=None, help="Pay with a plan (points).")
     cr.add_argument("--private-key", default=None, help="Pay with x402 from this EVM private key.")
     cr.add_argument("--wallet", default="credits.json", help="Wallet file for the tokens.")

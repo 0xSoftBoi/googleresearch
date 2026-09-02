@@ -1,6 +1,6 @@
 # Cloudflare front end — free tier, zero servers
 
-One Worker, no build step, nothing to pay for. The classical forecasters run
+One [Hono](https://hono.dev) Worker, nothing to pay for. The classical forecasters run
 **at the edge** in JavaScript inside the free plan's CPU budget; the TimesFM-3
 model runs **in the visitor's browser** through ONNX Runtime (WebAssembly)
 from a static asset; signups land in Workers KV. There is no backend to host.
@@ -30,15 +30,30 @@ use `eip155:8453` plus the `X402_FACILITATOR_AUTH` secret (Coinbase CDP) on
 mainnet. `X402_PAYWALL_EDGE_NATIVE=1` also charges for the edge classical
 API. `GET /v1/pricing` publishes the terms; `GET /api/edge` shows the state.
 
-**Unlinkable prepaid credits at the edge** (`docs/PRIVACY.md`): with the
-secret `CREDITS_PRIVATE_JWK` (make one with `python scripts/credits_keygen.py`)
-and the D1 binding, the Worker blind-signs credits (RFC 9474 via
-`@cloudflare/blindrsa-ts`), sells them in batches of 10/25/100 through x402,
-and redeems `X-Credit` tokens against a D1 nullifier ledger — the same key
-and token format as the Python service, so credits are interchangeable. In
-gateway mode `X-Credit` requests pass the paywall and are validated upstream.
-The D1 database `timesfm3-credits` (`10503e65-8f18-4803-890f-809025735489`)
-exists in the connected account; apply `migrations/0001_credits.sql` with
+**Built on Cloudflare's own primitives.** Routing is Hono; the paywall is
+the official `@x402/hono` middleware (`@x402/core` + `@x402/evm`, exact
+scheme, facilitator discovery at start-up); unlinkable credits are
+standard **Privacy Pass** (RFC 9576/9577/9578, token type `0x0002` Blind
+RSA) through `@cloudflare/privacypass-ts`, the library Cloudflare runs for
+its own issuers; nullifiers live in D1; leads in KV; rate limits in the
+rate-limit binding. Nothing is hand-rolled that Cloudflare already ships.
+
+**Privacy Pass at the edge** (`docs/PRIVACY.md`): with the secret
+`PRIVACY_PASS_PRIVATE_JWK` (make one with `python scripts/credits_keygen.py`)
+and the D1 binding `PRIVACY_PASS_DB`, the Worker is a Privacy Pass issuer
+and origin: `GET /.well-known/private-token-issuer-directory`,
+`GET /token-request/challenge` (401 + `WWW-Authenticate: PrivateToken`),
+`POST /token-request` (one token, $0.004 via x402 or free when no
+`X402_PAY_TO` is set), `POST /token-request/batch/{10|25|100}` (generic
+batched issuance, one payment), `GET /token-request/stats`. Priced `/v1/*`
+calls accept `Authorization: PrivateToken token="..."` and bypass the x402
+paywall; the same key and token format as the Python service, so tokens are
+interchangeable. `PRIVACY_PASS_ORIGIN` pins the challenge origin (the
+public host) and `PRIVACY_PASS_OLD_PUBLIC_JWKS` keeps rotated keys
+redeemable. In gateway mode PrivateToken requests pass the paywall and are
+validated upstream. The D1 database `timesfm3-credits`
+(`10503e65-8f18-4803-890f-809025735489`) exists in the connected account;
+apply `migrations/0001_credits.sql` with
 `npx wrangler d1 migrations apply timesfm3-credits` (`--local` for dev; dev
 secrets go in `.dev.vars`).
 

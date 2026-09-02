@@ -36,16 +36,20 @@ DEFAULT_PRICES: dict[str, str] = {
     "POST /v1/anomalies": "$0.01",
     "POST /v1/backtest": "$0.02",
     "POST /v1/volatility": "$0.005",
-    # Prepaid, unlinkable credits (see timesfm3.credits): 20% below pay-per-call.
-    "POST /v1/credits/buy/10": "$0.04",
-    "POST /v1/credits/buy/25": "$0.10",
-    "POST /v1/credits/buy/100": "$0.40",
+    # Privacy Pass tokens (RFC 9578): one token = one priced call, 20% below pay-per-call.
+    "POST /token-request": "$0.004",
+    "POST /token-request/batch/10": "$0.04",
+    "POST /token-request/batch/25": "$0.10",
+    "POST /token-request/batch/100": "$0.40",
 }
+#: Routes a PrivateToken can pay for (one token each).
+PRICED_ROUTES = ("POST /v1/forecast", "POST /v1/anomalies", "POST /v1/backtest", "POST /v1/volatility")
 
 DESCRIPTIONS = {
-    "POST /v1/credits/buy/10": "10 unlinkable prepaid credits (blind-signed)",
-    "POST /v1/credits/buy/25": "25 unlinkable prepaid credits (blind-signed)",
-    "POST /v1/credits/buy/100": "100 unlinkable prepaid credits (blind-signed)",
+    "POST /token-request": "One Privacy Pass token (RFC 9578, Blind RSA) = one API call",
+    "POST /token-request/batch/10": "10 Privacy Pass tokens, batched issuance",
+    "POST /token-request/batch/25": "25 Privacy Pass tokens, batched issuance",
+    "POST /token-request/batch/100": "100 Privacy Pass tokens, batched issuance",
     "POST /v1/forecast": "TimesFM-3 forecast: point + 9 quantiles per series and step",
     "POST /v1/anomalies": "Walk-forward anomaly scoring against the model's predictive band",
     "POST /v1/backtest": "Walk-forward model comparison with Diebold-Mariano tests",
@@ -138,14 +142,18 @@ def build_paid_app(app, config: X402Config):
 
 
 class X402Gate:
-    """ASGI front door: plan customers (API key) skip the paywall, everyone
-    else goes through the x402 middleware for priced routes."""
+    """Routes key holders and PrivateToken payers around the paywall, everyone else through it.
 
-    def __init__(self, app, keys: KeyStore, config: X402Config):
+    ``challenge_header(scope)`` (optional) returns a ``WWW-Authenticate`` value that
+    is added to the paywall's 402 responses so clients can pay with Privacy Pass instead.
+    """
+
+    def __init__(self, app, keys: KeyStore, config: X402Config, challenge_header=None):
         self.app = app
-        self.keys = keys
         self.config = config
         self.paid_app = build_paid_app(app, config)
+        self.keys = keys
+        self.challenge_header = challenge_header
 
     def __getattr__(self, name):  # TestClient / uvicorn see the FastAPI app's attributes
         return getattr(self.app, name)
@@ -155,15 +163,24 @@ class X402Gate:
             return await self.app(scope, receive, send)
         headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
         key = headers.get("x-api-key")
-        auth = headers.get("authorization", "")
+        auth = headers.get("authorization") or ""
         if not key and auth.lower().startswith("bearer "):
             key = auth[7:].strip()
         if key and self.keys.lookup(key):
             return await self.app(scope, receive, send)
-        if headers.get("x-credit"):  # prepaid credits are validated by the app itself
-            return await self.app(scope, receive, send)
+        if auth.lower().startswith("privatetoken"):
+            return await self.app(scope, receive, send)  # Privacy Pass tokens are redeemed by the app
         scope.setdefault("state", {})["x402_gate"] = True
-        return await self.paid_app(scope, receive, send)
+        challenge = self.challenge_header(scope) if self.challenge_header else None
+
+        async def send_with_challenge(message):
+            if challenge and message["type"] == "http.response.start" and message.get("status") == 402:
+                hdrs = [(k, v) for k, v in message.get("headers", []) if k.lower() != b"www-authenticate"]
+                hdrs.append((b"www-authenticate", challenge.encode()))
+                message = {**message, "headers": hdrs}
+            await send(message)
+
+        return await self.paid_app(scope, receive, send_with_challenge)
 
 
 def paid_identity(request, config: X402Config | None) -> ApiKey | None:
