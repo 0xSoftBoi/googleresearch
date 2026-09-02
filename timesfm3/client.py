@@ -18,6 +18,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
+from .credits import CreditWallet
 from .forecaster import ForecastResult
 
 
@@ -38,10 +39,13 @@ def _series(values, name: str | None = None) -> dict:
 
 class ForecastClient:
     def __init__(self, base_url: str = "http://localhost:8000", api_key: str | None = None,
-                 timeout: float = 120.0):
+                 timeout: float = 120.0, credits: CreditWallet | None = None):
+        """``credits``: a :class:`CreditWallet`; when set and no API key is given,
+        each priced call spends unlinkable prepaid tokens instead."""
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
+        self.credits = credits
 
     # -- transport -----------------------------------------------------------
 
@@ -52,6 +56,8 @@ class ForecastClient:
         req.add_header("accept", "application/json")
         if self.api_key:
             req.add_header("x-api-key", self.api_key)
+        elif self.credits is not None and method == "POST" and not path.startswith("/v1/credits/"):
+            req.add_header("x-credit", self.credits.take(CreditWallet.cost_of(method, path)))
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 return json.loads(resp.read().decode())
@@ -67,6 +73,25 @@ class ForecastClient:
 
     def health(self) -> dict:
         return self._request("GET", "/healthz")
+
+    def pricing(self) -> dict:
+        return self._request("GET", "/v1/pricing")
+
+    def buy_credits(self, count: int, wallet: CreditWallet | None = None) -> int:
+        """Buys ``count`` unlinkable credits into ``wallet`` (default: this client's).
+
+        Paid with the client's API key (plan points). To pay with x402
+        instead, wrap the purchase in an x402-capable HTTP client and call
+        the endpoints directly; see docs/PRIVACY.md.
+        """
+        wallet = wallet or self.credits
+        if wallet is None:
+            raise ValueError("a CreditWallet is required")
+        pool = self._request("GET", "/v1/credits/pool")
+        pending = wallet.prepare(pool, count)
+        res = self._request("POST", f"/v1/credits/buy/{count}",
+                            {"blinded": [format(p.blinded, "x") for p in pending]})
+        return wallet.finish(pending, res["blind_signatures"])
 
     def models(self) -> list[dict]:
         return self._request("GET", "/v1/models")

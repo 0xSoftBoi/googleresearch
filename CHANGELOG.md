@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0 — privacy pools
+
+- **Unlinkable prepaid credits**: RSA-FDH blind signatures (`timesfm3/credits.py`
+  client wallet, `timesfm3/serving/credits.py` pool). `GET /v1/credits/pool`,
+  `POST /v1/credits/buy/{10|25|100}` (paid with x402 at $0.004/credit or with
+  plan points), `X-Credit` redemption with nullifiers, persisted key and
+  ledger. Costs: forecast 1, volatility 1, anomalies 2, backtest 4.
+  `timesfm3 credits buy|status`; `ForecastClient(credits=...)` spends
+  automatically. The edge passes `X-Credit` through the paywall.
+- **docs/PRIVACY.md**: what each payment channel reveals, the credit pool's
+  guarantees and limits, and funding purchases from a Privacy Pools
+  (0xbow) withdrawal, with the operator-side treasury flow.
+
 ## 0.5.0 — pay per call with x402
 
 - The service answers priced endpoints with x402 `402 Payment Required`

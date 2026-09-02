@@ -22,7 +22,7 @@
 import * as F from "../public/js/forecast.js";
 import { describe as describeX402, finalize as x402Finalize, requirePayment, x402Config } from "./x402.js";
 
-const VERSION = "0.5.0";
+const VERSION = "0.6.0";
 const PROXY_PREFIXES = ["/v1/", "/healthz", "/docs", "/openapi.json", "/redoc"];
 const CACHEABLE = new Set(["/v1/models", "/v1/sample", "/healthz"]);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -52,7 +52,8 @@ export default {
         // x402: anonymous callers pay per call; bring-your-own-key callers are
         // metered upstream instead (gateway mode only, where keys are validated).
         const cfg = x402Config(env);
-        const hasKey = Boolean(request.headers.get("x-api-key") || bearer(request.headers.get("authorization")));
+        // Prepaid unlinkable credits (X-Credit) are validated by the upstream service.
+        const hasKey = Boolean(request.headers.get("x-api-key") || bearer(request.headers.get("authorization")) || request.headers.get("x-credit"));
         const paywall = cfg && (gateway ? !hasKey : env.X402_PAYWALL_EDGE_NATIVE === "1");
         let payment = null;
         if (paywall) {
@@ -318,7 +319,7 @@ function cors(response, request, env) {
   if (allowed.includes("*")) r.headers.set("access-control-allow-origin", "*");
   else if (origin && allowed.includes(origin)) { r.headers.set("access-control-allow-origin", origin); r.headers.set("vary", "origin"); }
   r.headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
-  r.headers.set("access-control-allow-headers", "content-type, x-api-key, authorization, payment-signature, x-payment");
+  r.headers.set("access-control-allow-headers", "content-type, x-api-key, authorization, payment-signature, x-payment, x-credit");
   r.headers.set("access-control-expose-headers", "x-usage-points, x-usage-remaining, x-usage-paid, x-edge-cache, x-ratelimit-limit, x-ratelimit-remaining, retry-after, payment-required, payment-response");
   r.headers.set("access-control-max-age", "86400");
   return r;

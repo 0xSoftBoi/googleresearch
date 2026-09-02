@@ -42,6 +42,7 @@ from ..tabular import future_timestamps, infer_step, parse_freq
 from . import schemas
 from .auth import ANONYMOUS, ApiKey, KeyStore, QuotaExceeded, UsageMeter
 from .registry import ModelRegistry
+from .credits import CREDIT_IDENTITY, DENOMINATIONS, POINTS_PER_CREDIT, CreditPool, credit_cost
 from .x402 import X402Config, X402Gate, paid_identity
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -117,6 +118,7 @@ def create_app(
     meter: UsageMeter | None = None,
     x402: X402Config | None = None,
     x402_from_env: bool = True,
+    credits: CreditPool | None = None,
 ):
     """Builds the service. Reads ``TIMESFM3_*`` env vars for anything omitted.
 
@@ -126,6 +128,12 @@ def create_app(
     registry = registry or ModelRegistry.from_env()
     keys = keys or KeyStore.from_env(api_key)
     x402 = x402 if x402 is not None else (X402Config.from_env() if x402_from_env else None)
+    if credits is None:
+        credits = CreditPool(
+            key_file=os.environ.get("TIMESFM3_CREDITS_KEY_FILE") or None,
+            ledger_file=os.environ.get("TIMESFM3_CREDITS_LEDGER_FILE") or None,
+            price_per_credit_usd=float(os.environ.get("TIMESFM3_CREDITS_PRICE", "0.004")),
+        )
     meter = meter or UsageMeter(os.environ.get("TIMESFM3_USAGE_FILE") or None)
     max_series = max_series or int(os.environ.get("TIMESFM3_MAX_SERIES", "64"))
     max_context = max_context or int(os.environ.get("TIMESFM3_MAX_CONTEXT", "16384"))
@@ -144,8 +152,22 @@ def create_app(
     app.state.keys = keys
     app.state.meter = meter
     app.state.x402 = x402
+    app.state.credits = credits
 
     async def require_key(request: Request) -> ApiKey:
+        header = request.headers.get("x-credit")
+        if header:
+            cost = credit_cost(request.method, request.url.path)
+            if cost is None:
+                raise HTTPException(status_code=400, detail="This endpoint does not take credits.")
+            ok, why = credits.redeem(header, cost)
+            if not ok:
+                raise HTTPException(
+                    status_code=402, detail=f"Credit rejected: {why}. Buy credits at POST /v1/credits/buy/{{n}}.",
+                    headers={"x-credit-cost": str(cost)},
+                )
+            request.scope.setdefault("state", {})["credits_spent"] = cost
+            return CREDIT_IDENTITY
         paid = paid_identity(request, x402)
         if paid is not None:
             return paid
@@ -223,12 +245,40 @@ def create_app(
 
     @app.get("/v1/pricing", tags=["ops"])
     async def pricing() -> dict:
-        """How to pay: plans via API keys, or x402 pay-per-call in USDC."""
+        """How to pay: plans via API keys, x402 pay-per-call, or unlinkable prepaid credits."""
+        c = credits.describe()
         return {
             "plans": {"keys": keys.names() if not keys.open else [], "unit": "forecast points",
                       "note": "Send X-API-Key; see /v1/usage for quota."},
             "x402": x402.describe() if x402 else {"enabled": False},
+            "credits": {"denominations": c["denominations"], "price_per_credit_usd": c["price_per_credit_usd"],
+                        "costs": c["costs"], "how": "GET /v1/credits/pool, blind serials, POST /v1/credits/buy/{n}, "
+                        "then send X-Credit: token[,token...]. Tokens are unlinkable to the purchase."},
         }
+
+    @app.get("/v1/credits/pool", tags=["credits"])
+    async def credits_pool() -> dict:
+        """Public key and terms of the credit pool (no auth: anyone may buy)."""
+        return credits.describe()
+
+    @app.post("/v1/credits/buy/{count}", tags=["credits"])
+    async def credits_buy(count: int, body: dict, response: Response,
+                          key: ApiKey = Depends(require_key)) -> dict:
+        """Blind-signs ``count`` blinded serials; paid via x402 or a plan."""
+        if count not in DENOMINATIONS:
+            raise HTTPException(status_code=404, detail=f"Denominations: {list(DENOMINATIONS)}")
+        blinded = body.get("blinded") if isinstance(body, dict) else None
+        if not isinstance(blinded, list) or len(blinded) != count:
+            raise HTTPException(status_code=422, detail=f"Body must be {{\"blinded\": [<{count} hex integers>]}}.")
+        if key is CREDIT_IDENTITY:
+            raise HTTPException(status_code=400, detail="Credits cannot buy credits.")
+        if key.name != "x402":  # plan holders (and open mode) pay in points; x402 paid already
+            charge(key, count * POINTS_PER_CREDIT, response)
+        try:
+            sigs = await run_in_threadpool(credits.sign_blinded, blinded)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        return {"kid": credits.kid, "count": count, "blind_signatures": sigs}
 
     @app.get("/metrics", response_class=PlainTextResponse, tags=["ops"])
     async def prometheus() -> str:

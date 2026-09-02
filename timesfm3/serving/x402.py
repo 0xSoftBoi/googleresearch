@@ -36,9 +36,16 @@ DEFAULT_PRICES: dict[str, str] = {
     "POST /v1/anomalies": "$0.01",
     "POST /v1/backtest": "$0.02",
     "POST /v1/volatility": "$0.005",
+    # Prepaid, unlinkable credits (see timesfm3.credits): 20% below pay-per-call.
+    "POST /v1/credits/buy/10": "$0.04",
+    "POST /v1/credits/buy/25": "$0.10",
+    "POST /v1/credits/buy/100": "$0.40",
 }
 
 DESCRIPTIONS = {
+    "POST /v1/credits/buy/10": "10 unlinkable prepaid credits (blind-signed)",
+    "POST /v1/credits/buy/25": "25 unlinkable prepaid credits (blind-signed)",
+    "POST /v1/credits/buy/100": "100 unlinkable prepaid credits (blind-signed)",
     "POST /v1/forecast": "TimesFM-3 forecast: point + 9 quantiles per series and step",
     "POST /v1/anomalies": "Walk-forward anomaly scoring against the model's predictive band",
     "POST /v1/backtest": "Walk-forward model comparison with Diebold-Mariano tests",
@@ -152,6 +159,8 @@ class X402Gate:
         if not key and auth.lower().startswith("bearer "):
             key = auth[7:].strip()
         if key and self.keys.lookup(key):
+            return await self.app(scope, receive, send)
+        if headers.get("x-credit"):  # prepaid credits are validated by the app itself
             return await self.app(scope, receive, send)
         scope.setdefault("state", {})["x402_gate"] = True
         return await self.paid_app(scope, receive, send)

@@ -6,6 +6,8 @@
     timesfm3 models [--checkpoint PATH ...]
     timesfm3 anomalies data.csv [--context 96] [--threshold 2] [--model NAME]
     timesfm3 finetune data.csv --out my-model.pt [--from CKPT] [--steps 300]
+    timesfm3 credits buy --api URL --count 25 [--api-key K | --private-key 0x..] [--wallet credits.json]
+    timesfm3 credits status [--wallet credits.json]
     timesfm3 pack train_ckpt.pt packaged.pt --name my-model
     timesfm3 train --config small --steps 6000 ...     (see timesfm3.train)
 """
@@ -229,6 +231,47 @@ def cmd_finetune(args) -> int:
     return 0
 
 
+def cmd_credits(args) -> int:
+    from .client import ForecastClient
+    from .credits import CreditWallet
+
+    wallet = CreditWallet(args.wallet)
+    if args.action == "status":
+        print(f"{args.wallet}: {len(wallet)} unspent credit(s)"
+              + (f", pool key {wallet.pool['kid']}" if wallet.pool else ""))
+        return 0
+    if args.private_key:
+        # Pay for the batch with x402 from the given EVM key (needs `pip install "x402[evm]"`).
+        try:
+            from eth_account import Account
+            from x402 import x402ClientSync
+            from x402.http.clients import x402_requests
+            from x402.mechanisms.evm import EthAccountSigner
+            from x402.mechanisms.evm.exact import ExactEvmClientScheme
+        except ImportError:
+            print("x402 payment needs:  pip install 'timesfm3[x402]'", file=sys.stderr)
+            return 2
+        client = x402ClientSync().register("eip155:*", ExactEvmClientScheme(EthAccountSigner(Account.from_key(args.private_key))))
+        session = x402_requests(client)
+        pool = session.get(f"{args.api}/v1/credits/pool", timeout=60).json()
+        pending = wallet.prepare(pool, args.count)
+        r = session.post(f"{args.api}/v1/credits/buy/{args.count}",
+                         json={"blinded": [format(p.blinded, "x") for p in pending]}, timeout=120)
+        if r.status_code != 200:
+            print(f"error: HTTP {r.status_code}: {r.text[:300]}", file=sys.stderr)
+            return 1
+        added = wallet.finish(pending, r.json()["blind_signatures"])
+        paid = r.headers.get("PAYMENT-RESPONSE", "")
+        print(f"bought {added} credits with x402 ({pool['price_per_credit_usd'] * added:.4f} USD)"
+              + ("; settlement receipt in PAYMENT-RESPONSE" if paid else ""))
+    else:
+        fc = ForecastClient(args.api, api_key=args.api_key, credits=wallet)
+        added = fc.buy_credits(args.count, wallet)
+        print(f"bought {added} credits" + (" on your plan" if args.api_key else ""))
+    print(f"{args.wallet}: {len(wallet)} unspent credit(s); use ForecastClient(credits=CreditWallet('{args.wallet}'))")
+    return 0
+
+
 def cmd_pack(args) -> int:
     from .checkpoint import package_checkpoint
 
@@ -317,6 +360,15 @@ def build_parser() -> argparse.ArgumentParser:
     ft.add_argument("--no-eval", action="store_true")
     ft.add_argument("--device", default=None)
     ft.set_defaults(func=cmd_finetune)
+
+    cr = sub.add_parser("credits", help="Buy / inspect unlinkable prepaid credits.")
+    cr.add_argument("action", choices=["buy", "status"])
+    cr.add_argument("--api", default="http://localhost:8000")
+    cr.add_argument("--count", type=int, default=25, help="10, 25 or 100")
+    cr.add_argument("--api-key", default=None, help="Pay with a plan (points).")
+    cr.add_argument("--private-key", default=None, help="Pay with x402 from this EVM private key.")
+    cr.add_argument("--wallet", default="credits.json", help="Wallet file for the tokens.")
+    cr.set_defaults(func=cmd_credits)
 
     k = sub.add_parser("pack", help="Package a training checkpoint (fp16 + metadata).")
     k.add_argument("src")

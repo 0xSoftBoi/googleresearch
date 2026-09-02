@@ -99,6 +99,7 @@ this release (`X-Usage-Points`, `/v1/usage`, per-key monthly quotas):
 | **Cloud Starter** | $49/month | Hosted API, 2M forecast points/month, 3 keys | `TIMESFM3_API_KEYS_FILE` quotas |
 | **Cloud Team** | $299/month | 20M points/month, anomaly + volatility endpoints, fine-tuning jobs, 10 keys | same, plus `timesfm3 finetune` as a job |
 | **Overage** | $0.02 per 1,000 points | Falls between Vertex's $0.02–$0.20/1,000 predictions and ForecastAPI's ~$2–3/1,000 calls | metering headers |
+| **Prepaid credit pool** | $0.004 per credit in batches of 10/25/100 | Blind-signed, unlinkable tokens: the privacy tier for quant and enterprise buyers whose query pattern is the secret; sold via x402 or plans | `timesfm3/credits.py`, `timesfm3/serving/credits.py` |
 | **Pay-per-call (x402)** | $0.005 forecast · $0.005 volatility · $0.01 anomalies · $0.02 backtest, in USDC | No account, no invoice: the HTTP 402 flow AI agents already speak; settles on Base in seconds | `timesfm3/serving/x402.py`, `cloudflare/src/x402.js` |
 | **Enterprise / self-hosted** | $2,000–$8,000/month | Private image, SSO, support SLA, larger checkpoints (`base` config trained on GPU), fine-tuning on their corpus, commercial warranty on weights | Docker + `TIMESFM3_MODEL_DIR` + NOTICE |
 
@@ -128,6 +129,16 @@ the $0.005 forecast price nets ~$0.004 at scale against ~$0.000002 of
 compute. The metered plans stay the home for volume; x402 is the zero-friction
 top of funnel that also turns every agent marketplace and x402 directory
 ("bazaar" listings) into a distribution channel.
+
+### Privacy as a feature, not a footnote
+
+Every competitor's API logs who asked what. For the quant segment that is a
+reason not to use a hosted forecaster at all. This product sells a credit
+pool whose tokens are blind-signed (the operator provably cannot link a call
+to a buyer) and documents funding those credits from a Privacy Pools
+withdrawal, the compliant on-chain privacy protocol from the Ethereum
+research community. It is a differentiator no incumbent can copy without
+redesigning billing, and it costs nothing to run.
 
 ## 6. Go-to-market (first 90 days)
 

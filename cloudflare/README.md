@@ -30,6 +30,9 @@ use `eip155:8453` plus the `X402_FACILITATOR_AUTH` secret (Coinbase CDP) on
 mainnet. `X402_PAYWALL_EDGE_NATIVE=1` also charges for the edge classical
 API. `GET /v1/pricing` publishes the terms; `GET /api/edge` shows the state.
 
+Requests carrying `X-Credit` (unlinkable prepaid credits, see
+`docs/PRIVACY.md`) pass the edge paywall and are validated upstream.
+
 Per-IP rate limiting (30/min) uses the Workers rate-limit binding, which is
 free and makes no KV writes — the free tier's 1,000 KV writes/day are kept
 for leads.

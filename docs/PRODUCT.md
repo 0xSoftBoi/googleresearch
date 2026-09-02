@@ -41,6 +41,7 @@ curl -s -X POST localhost:8000/v1/forecast -H 'content-type: application/json' \
 | `timesfm3 finetune` | Fine-tune the starter on your CSV, validate on its held-out tail, print the same DM-tested backtest |
 | API keys & metering | Named keys with plans and monthly forecast-point quotas, `/v1/usage`, usage headers, 429 on exhaustion |
 | x402 pay-per-call | Anonymous callers and AI agents pay per request in USDC over HTTP 402; no signup, settled on Base |
+| Privacy pools | Prepaid credits are blind-signed, so calls cannot be linked to the buyer or to each other; funding via Privacy Pools withdrawals documented in [docs/PRIVACY.md](PRIVACY.md) |
 | Apache-2.0 code **and weights** | Google's TimesFM-3 weights are non-commercial; ours are self-trained (see `NOTICE`) |
 | `timesfm3` CLI | forecast / backtest / anomalies / finetune on CSV files, list models, package checkpoints, train |
 | `timesfm3.client` | Dependency-free Python client returning numpy arrays |
@@ -366,6 +367,18 @@ The Cloudflare Worker enforces the same paywall in gateway mode (anonymous
 callers pay, bring-your-own-key callers are metered upstream); set
 `X402_PAY_TO` in `wrangler.jsonc`.
 
+## Unlinkable prepaid credits
+
+Buyers who do not want their query pattern tied to a wallet or key buy a
+batch of blind-signed credits once (with x402 or a plan) and spend
+single-use tokens the service cannot link to the purchase or to each other.
+`GET /v1/credits/pool` gives the pool key, `POST /v1/credits/buy/{10|25|100}`
+signs blinded serials ($0.004 per credit), and `X-Credit: token[,token]`
+pays for a call (forecast 1, volatility 1, anomalies 2, backtest 4). The CLI
+(`timesfm3 credits buy`) and `ForecastClient(credits=CreditWallet(...))` do
+the blinding. Threat model, on-chain Privacy Pools funding and operator
+notes are in [docs/PRIVACY.md](PRIVACY.md).
+
 ## Configuration
 
 | Variable | Default | Meaning |
@@ -379,6 +392,9 @@ callers pay, bring-your-own-key callers are metered upstream); set
 | `TIMESFM3_X402_FACILITATOR` | by network | Facilitator base URL (`/verify`, `/settle`) |
 | `TIMESFM3_X402_FACILITATOR_AUTH` | unset | `Authorization` header for the facilitator (CDP) |
 | `TIMESFM3_X402_PRICES` | see above | JSON overrides, e.g. `{"POST /v1/forecast": "$0.01"}` |
+| `TIMESFM3_CREDITS_KEY_FILE` | unset (ephemeral key) | RSA key for the credit pool; set it so tokens survive restarts |
+| `TIMESFM3_CREDITS_LEDGER_FILE` | unset | Persist spent serials and pool counters |
+| `TIMESFM3_CREDITS_PRICE` | `0.004` | USD per credit (x402 prices for the denominations are set via `TIMESFM3_X402_PRICES`) |
 | `TIMESFM3_CHECKPOINTS` | unset | Comma-separated `[name=]path` checkpoints to serve |
 | `TIMESFM3_MODEL_DIR` | unset (`/models` in Docker) | Serve every `*.pt` in this directory |
 | `TIMESFM3_DEFAULT_MODEL` | last checkpoint added, else `ewma` | Model used when a request omits `model` |
