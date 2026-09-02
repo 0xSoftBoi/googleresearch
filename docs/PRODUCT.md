@@ -40,6 +40,7 @@ curl -s -X POST localhost:8000/v1/forecast -H 'content-type: application/json' \
 | `/v1/anomalies` | Walk-forward anomaly scoring against the model's own predictive band |
 | `timesfm3 finetune` | Fine-tune the starter on your CSV, validate on its held-out tail, print the same DM-tested backtest |
 | API keys & metering | Named keys with plans and monthly forecast-point quotas, `/v1/usage`, usage headers, 429 on exhaustion |
+| x402 pay-per-call | Anonymous callers and AI agents pay per request in USDC over HTTP 402; no signup, settled on Base |
 | Apache-2.0 code **and weights** | Google's TimesFM-3 weights are non-commercial; ours are self-trained (see `NOTICE`) |
 | `timesfm3` CLI | forecast / backtest / anomalies / finetune on CSV files, list models, package checkpoints, train |
 | `timesfm3.client` | Dependency-free Python client returning numpy arrays |
@@ -300,6 +301,71 @@ the service is open and metered under one `anonymous` key, so the usage
 headers and `/v1/usage` still work. Rate limiting per second is left to your
 gateway; quotas here are monthly.
 
+## Pay per call with x402 (USDC, no signup)
+
+Anyone — an AI agent, a script, a customer without an account — can call
+the priced endpoints and pay per request in USDC using the
+[x402](https://x402.org) protocol, which rides on HTTP 402:
+
+```bash
+export TIMESFM3_X402_PAY_TO=0xYourWallet          # enables the paywall
+export TIMESFM3_X402_NETWORK=eip155:84532         # Base Sepolia to test; eip155:8453 for Base mainnet
+timesfm3 serve
+```
+
+| Endpoint | Price per call |
+|---|---|
+| `POST /v1/forecast` | $0.005 |
+| `POST /v1/volatility` | $0.005 |
+| `POST /v1/anomalies` | $0.01 |
+| `POST /v1/backtest` | $0.02 |
+
+How it works: a request without an API key gets `402 Payment Required` with
+a base64 `PAYMENT-REQUIRED` header stating the amount, the USDC contract,
+the network and your wallet. The client signs a USDC transfer authorization
+and retries with `PAYMENT-SIGNATURE`. The service asks a facilitator to
+verify it, serves the response, settles the transfer on-chain, and returns
+`PAYMENT-RESPONSE` with the transaction hash. API-key holders never see the
+paywall; their requests are metered against their plan as before. Prices
+are overridable with `TIMESFM3_X402_PRICES` (JSON), and `GET /v1/pricing`
+publishes both channels.
+
+Facilitators: on Base Sepolia the free `https://x402.org/facilitator` is
+used by default; on Base mainnet the default is Coinbase's CDP facilitator
+(`https://api.cdp.coinbase.com/platform/v2/x402`, first 1,000 settlements a
+month free, then $0.001 each — set `TIMESFM3_X402_FACILITATOR_AUTH` to the
+`Authorization` header value CDP issues). Any x402 facilitator URL works
+via `TIMESFM3_X402_FACILITATOR`.
+
+Paying from code takes one wrapper around the HTTP client:
+
+```python
+# pip install "x402[evm]"
+from eth_account import Account
+from x402 import x402ClientSync
+from x402.http.clients import x402_requests
+from x402.mechanisms.evm import EthAccountSigner
+from x402.mechanisms.evm.exact import ExactEvmClientScheme
+
+client = x402ClientSync().register("eip155:*", ExactEvmClientScheme(EthAccountSigner(Account.from_key("0x..."))))
+session = x402_requests(client)                        # a requests.Session that pays 402s
+session.post("https://api.example.com/v1/forecast", json={...})   # pays $0.005, returns the forecast
+```
+
+```js
+// npm i @x402/fetch @x402/evm viem
+import { wrapFetchWithPayment, x402Client } from "@x402/fetch";
+import { ExactEvmScheme } from "@x402/evm";
+import { privateKeyToAccount } from "viem/accounts";
+const client = new x402Client().register("eip155:*", new ExactEvmScheme(privateKeyToAccount("0x...")));
+const paidFetch = wrapFetchWithPayment(fetch, client);
+await paidFetch("https://api.example.com/v1/forecast", { method: "POST", headers: {"content-type": "application/json"}, body });
+```
+
+The Cloudflare Worker enforces the same paywall in gateway mode (anonymous
+callers pay, bring-your-own-key callers are metered upstream); set
+`X402_PAY_TO` in `wrangler.jsonc`.
+
 ## Configuration
 
 | Variable | Default | Meaning |
@@ -308,6 +374,11 @@ gateway; quotas here are monthly.
 | `TIMESFM3_API_KEYS` | unset | Inline `name:key[:monthly_points]` list |
 | `TIMESFM3_API_KEYS_FILE` | unset | JSON file of keys with plans and quotas |
 | `TIMESFM3_USAGE_FILE` | unset | Persist monthly usage counters here |
+| `TIMESFM3_X402_PAY_TO` | unset | Wallet that receives x402 payments; enables pay-per-call |
+| `TIMESFM3_X402_NETWORK` | `eip155:84532` | CAIP-2 network (`eip155:8453` for Base mainnet) |
+| `TIMESFM3_X402_FACILITATOR` | by network | Facilitator base URL (`/verify`, `/settle`) |
+| `TIMESFM3_X402_FACILITATOR_AUTH` | unset | `Authorization` header for the facilitator (CDP) |
+| `TIMESFM3_X402_PRICES` | see above | JSON overrides, e.g. `{"POST /v1/forecast": "$0.01"}` |
 | `TIMESFM3_CHECKPOINTS` | unset | Comma-separated `[name=]path` checkpoints to serve |
 | `TIMESFM3_MODEL_DIR` | unset (`/models` in Docker) | Serve every `*.pt` in this directory |
 | `TIMESFM3_DEFAULT_MODEL` | last checkpoint added, else `ewma` | Model used when a request omits `model` |

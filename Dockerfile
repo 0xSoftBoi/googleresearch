@@ -10,7 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
 
 WORKDIR /app
 RUN pip install --index-url ${TORCH_INDEX} "torch>=2.4" \
- && pip install "numpy>=1.24" "fastapi>=0.110" "uvicorn[standard]>=0.27" "pydantic>=2.5"
+ && pip install "numpy>=1.24" "fastapi>=0.110" "uvicorn[standard]>=0.27" "pydantic>=2.5" "x402[evm]>=2.21"
 
 COPY pyproject.toml README.md ./
 COPY timesfm3 ./timesfm3

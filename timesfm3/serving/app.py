@@ -42,6 +42,7 @@ from ..tabular import future_timestamps, infer_step, parse_freq
 from . import schemas
 from .auth import ANONYMOUS, ApiKey, KeyStore, QuotaExceeded, UsageMeter
 from .registry import ModelRegistry
+from .x402 import X402Config, X402Gate, paid_identity
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
@@ -114,10 +115,17 @@ def create_app(
     max_context: int | None = None,
     keys: KeyStore | None = None,
     meter: UsageMeter | None = None,
-) -> FastAPI:
-    """Builds the service. Reads ``TIMESFM3_*`` env vars for anything omitted."""
+    x402: X402Config | None = None,
+    x402_from_env: bool = True,
+):
+    """Builds the service. Reads ``TIMESFM3_*`` env vars for anything omitted.
+
+    Returns the FastAPI app, or -- when x402 pay-per-call is configured -- an
+    ASGI gate around it that proxies the app's attributes.
+    """
     registry = registry or ModelRegistry.from_env()
     keys = keys or KeyStore.from_env(api_key)
+    x402 = x402 if x402 is not None else (X402Config.from_env() if x402_from_env else None)
     meter = meter or UsageMeter(os.environ.get("TIMESFM3_USAGE_FILE") or None)
     max_series = max_series or int(os.environ.get("TIMESFM3_MAX_SERIES", "64"))
     max_context = max_context or int(os.environ.get("TIMESFM3_MAX_CONTEXT", "16384"))
@@ -135,8 +143,12 @@ def create_app(
     app.state.metrics = metrics
     app.state.keys = keys
     app.state.meter = meter
+    app.state.x402 = x402
 
     async def require_key(request: Request) -> ApiKey:
+        paid = paid_identity(request, x402)
+        if paid is not None:
+            return paid
         if keys.open:
             return anonymous
         header = request.headers.get("x-api-key")
@@ -208,6 +220,15 @@ def create_app(
             default_model=registry.default,
             device=(default.meta.get("device", "cpu") if default else "cpu"),
         )
+
+    @app.get("/v1/pricing", tags=["ops"])
+    async def pricing() -> dict:
+        """How to pay: plans via API keys, or x402 pay-per-call in USDC."""
+        return {
+            "plans": {"keys": keys.names() if not keys.open else [], "unit": "forecast points",
+                      "note": "Send X-API-Key; see /v1/usage for quota."},
+            "x402": x402.describe() if x402 else {"enabled": False},
+        }
 
     @app.get("/metrics", response_class=PlainTextResponse, tags=["ops"])
     async def prometheus() -> str:
@@ -396,6 +417,8 @@ def create_app(
                 threshold=req.threshold, series=out, latency_ms=timer.ms,
             )
 
+    if x402 is not None:
+        return X402Gate(app, keys, x402)
     return app
 
 

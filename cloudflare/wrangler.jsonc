@@ -33,7 +33,13 @@
     "API_ORIGIN": "",
     "RATE_LIMIT_PER_MINUTE": "30",
     "MAX_BODY_BYTES": "1048576",
-    "ALLOWED_ORIGINS": "*"
+    "ALLOWED_ORIGINS": "*",
+    // x402 pay-per-call (USDC). Set X402_PAY_TO to your wallet to enable; the
+    // paywall applies to anonymous callers in gateway mode, and to the edge
+    // classical API only when X402_PAYWALL_EDGE_NATIVE is "1".
+    "X402_PAY_TO": "",
+    "X402_NETWORK": "eip155:84532",
+    "X402_PAYWALL_EDGE_NATIVE": "0"
   }
   // Custom domain (uncomment after adding the zone to the account):
   // "routes": [{ "pattern": "forecast.example.com", "custom_domain": true }]

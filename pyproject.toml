@@ -25,9 +25,10 @@ dependencies = [
 
 [project.optional-dependencies]
 serve = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "pydantic>=2.5"]
+x402 = ["x402[evm]>=2.21"]
 examples = ["matplotlib>=3.7"]
 polymarket = ["pyarrow>=14"]
-test = ["pytest>=7", "pyarrow>=14", "fastapi>=0.110", "uvicorn>=0.27", "pydantic>=2.5", "httpx>=0.25"]
+test = ["pytest>=7", "pyarrow>=14", "fastapi>=0.110", "uvicorn>=0.27", "pydantic>=2.5", "httpx>=0.25", "x402[evm]>=2.21"]
 
 [project.scripts]
 timesfm3 = "timesfm3.cli:main"

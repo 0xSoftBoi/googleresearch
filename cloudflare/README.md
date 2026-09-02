@@ -21,6 +21,15 @@ Set `API_ORIGIN` to a self-hosted `timesfm3 serve` and the same Worker
 becomes a **gateway**: `/v1/*` is proxied with the upstream key attached
 server-side, bring-your-own keys pass through, cheap GETs are edge-cached.
 
+**Pay-per-call with x402.** Set `X402_PAY_TO` (your wallet) in
+`wrangler.jsonc`; in gateway mode anonymous callers then pay per request in
+USDC ($0.005 forecast, $0.01 anomalies, $0.02 backtest, $0.005 volatility)
+while bring-your-own-key callers are metered upstream. `X402_NETWORK`
+defaults to Base Sepolia (`eip155:84532`, free facilitator at x402.org);
+use `eip155:8453` plus the `X402_FACILITATOR_AUTH` secret (Coinbase CDP) on
+mainnet. `X402_PAYWALL_EDGE_NATIVE=1` also charges for the edge classical
+API. `GET /v1/pricing` publishes the terms; `GET /api/edge` shows the state.
+
 Per-IP rate limiting (30/min) uses the Workers rate-limit binding, which is
 free and makes no KV writes — the free tier's 1,000 KV writes/day are kept
 for leads.

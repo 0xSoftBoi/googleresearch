@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0 — pay per call with x402
+
+- The service answers priced endpoints with x402 `402 Payment Required`
+  challenges (USDC on Base via the official `x402` package): $0.005
+  forecast, $0.005 volatility, $0.01 anomalies, $0.02 backtest. API-key
+  holders bypass the paywall and stay metered; anonymous callers pay per
+  request and are metered under an `x402` identity. `GET /v1/pricing`
+  publishes both channels. Config via `TIMESFM3_X402_*`.
+- The Cloudflare Worker enforces the same paywall in gateway mode with a
+  small spec-exact implementation (`cloudflare/src/x402.js`): verify before
+  the handler, settle after, `PAYMENT-RESPONSE` on success, CORS for the
+  payment headers; optional on the edge classical API.
+- Tests with a mocked facilitator for both, plus a cross-check that the
+  Worker's challenge parses with the official Python models.
+
 ## 0.4.0 — the whole product on Cloudflare's free tier
 
 - `scripts/export_onnx.py`: TimesFM-3 checkpoints export to ONNX (dynamic

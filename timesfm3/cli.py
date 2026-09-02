@@ -56,6 +56,10 @@ def cmd_serve(args) -> int:
     app = create_app(registry=registry)
     names = ", ".join(f"{e.name}{'*' if e.name == registry.default else ''}" for e in registry.entries())
     print(f"TimesFM-3 Forecast Service v{__version__}: {len(registry)} models ({names})")
+    x402 = getattr(app.state, "x402", None)
+    if x402 is not None:
+        print(f"x402 pay-per-call: {x402.network} -> {x402.pay_to} via {x402.facilitator}"
+              + ("" if x402.mainnet else "  (testnet: fund wallets with Base Sepolia USDC)"))
     print(f"dashboard http://{args.host}:{args.port}/   docs http://{args.host}:{args.port}/docs")
     uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
     return 0

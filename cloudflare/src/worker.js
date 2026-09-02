@@ -20,8 +20,9 @@
  */
 
 import * as F from "../public/js/forecast.js";
+import { describe as describeX402, finalize as x402Finalize, requirePayment, x402Config } from "./x402.js";
 
-const VERSION = "0.4.0";
+const VERSION = "0.5.0";
 const PROXY_PREFIXES = ["/v1/", "/healthz", "/docs", "/openapi.json", "/redoc"];
 const CACHEABLE = new Set(["/v1/models", "/v1/sample", "/healthz"]);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -44,11 +45,24 @@ export default {
       if (path === "/favicon.ico") return asset(env, request, "/favicon.svg");
 
       const gateway = Boolean((env.API_ORIGIN || "").trim());
+      if (path === "/v1/pricing") return cors(json(pricing(env, gateway)), request, env);
       if (PROXY_PREFIXES.some((p) => path === p || path.startsWith(p))) {
         const limited = await rateLimit(request, env);
         if (limited) return cors(limited, request, env);
-        if (gateway) return await proxy(request, env, ctx, path + url.search);
-        return cors(await edgeApi(request, env, url), request, env);
+        // x402: anonymous callers pay per call; bring-your-own-key callers are
+        // metered upstream instead (gateway mode only, where keys are validated).
+        const cfg = x402Config(env);
+        const hasKey = Boolean(request.headers.get("x-api-key") || bearer(request.headers.get("authorization")));
+        const paywall = cfg && (gateway ? !hasKey : env.X402_PAYWALL_EDGE_NATIVE === "1");
+        let payment = null;
+        if (paywall) {
+          const gate = await requirePayment(cfg, request, path);
+          if (gate && gate.response) return cors(gate.response, request, env);
+          if (gate) payment = gate.payment;
+        }
+        let response = gateway ? await proxy(request, env, ctx, path + url.search) : cors(await edgeApi(request, env, url), request, env);
+        if (payment) response = cors(await x402Finalize(cfg, payment, response), request, env);
+        return response;
       }
       return withSecurityHeaders(await env.ASSETS.fetch(request));
     } catch (err) {
@@ -210,6 +224,7 @@ async function proxy(request, env, ctx, upstreamPath) {
   if (cacheable) { const hit = await cache.match(cacheKey); if (hit) return cors(withHeader(hit, "x-edge-cache", "HIT"), request, env); }
   const headers = new Headers(request.headers);
   headers.delete("host"); headers.delete("cookie");
+  headers.delete("payment-signature"); headers.delete("x-payment");
   const clientKey = headers.get("x-api-key") || bearer(headers.get("authorization"));
   if (!clientKey && env.API_KEY) headers.set("x-api-key", env.API_KEY);
   headers.set("x-forwarded-for", clientIp(request));
@@ -279,7 +294,16 @@ async function asset(env, request, path) {
   const u = new URL(request.url); u.pathname = path; u.search = "";
   return env.ASSETS.fetch(new Request(u.toString(), { method: "GET" }));
 }
-function edgeInfo(request, env) { return { worker: "timesfm3-edge", version: VERSION, mode: (env.API_ORIGIN || "").trim() ? "gateway" : "edge-native", upstream_key_configured: Boolean(env.API_KEY), rate_limiter: Boolean(env.RATE_LIMITER), colo: request.cf && request.cf.colo ? request.cf.colo : null, country: request.cf && request.cf.country ? request.cf.country : null }; }
+function edgeInfo(request, env) { return { worker: "timesfm3-edge", version: VERSION, mode: (env.API_ORIGIN || "").trim() ? "gateway" : "edge-native", upstream_key_configured: Boolean(env.API_KEY), rate_limiter: Boolean(env.RATE_LIMITER), x402: describeX402(x402Config(env)), colo: request.cf && request.cf.colo ? request.cf.colo : null, country: request.cf && request.cf.country ? request.cf.country : null }; }
+function pricing(env, gateway) {
+  const cfg = x402Config(env);
+  const paywall = cfg && (gateway || env.X402_PAYWALL_EDGE_NATIVE === "1");
+  return {
+    free: gateway ? "GET endpoints; bring your own API key for metered plans" : "classical-model API at the edge, TimesFM-3 in the browser at /app",
+    plans: gateway ? { how: "X-API-Key from the service operator; metered in forecast points; see /v1/usage" } : null,
+    x402: paywall ? describeX402(cfg) : { enabled: false, note: cfg ? "configured but not enforced in edge-native mode" : "set X402_PAY_TO to enable" },
+  };
+}
 function clientIp(request) { return request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || "0.0.0.0"; }
 function bearer(v) { if (!v) return null; const m = /^bearer\s+(.+)$/i.exec(v.trim()); return m ? m[1].trim() : null; }
 function clip(v, n) { return v === undefined || v === null ? "" : String(v).trim().slice(0, n); }
@@ -294,8 +318,8 @@ function cors(response, request, env) {
   if (allowed.includes("*")) r.headers.set("access-control-allow-origin", "*");
   else if (origin && allowed.includes(origin)) { r.headers.set("access-control-allow-origin", origin); r.headers.set("vary", "origin"); }
   r.headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
-  r.headers.set("access-control-allow-headers", "content-type, x-api-key, authorization");
-  r.headers.set("access-control-expose-headers", "x-usage-points, x-usage-remaining, x-edge-cache, x-ratelimit-limit, x-ratelimit-remaining, retry-after");
+  r.headers.set("access-control-allow-headers", "content-type, x-api-key, authorization, payment-signature, x-payment");
+  r.headers.set("access-control-expose-headers", "x-usage-points, x-usage-remaining, x-usage-paid, x-edge-cache, x-ratelimit-limit, x-ratelimit-remaining, retry-after, payment-required, payment-response");
   r.headers.set("access-control-max-age", "86400");
   return r;
 }
