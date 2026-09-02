@@ -35,6 +35,7 @@ docker compose up --build                                    # same thing, conta
 | **Ops** | API keys with plans and monthly quotas, usage metering, request limits, `/healthz`, Prometheus `/metrics`, OpenAPI, Docker image, CI |
 | **License** | Apache-2.0 code **and weights** — Google's own TimesFM-3 weights are non-commercial; these are self-trained (`NOTICE`) |
 | **Clients** | `timesfm3` CLI, `timesfm3.client.ForecastClient` (stdlib only) |
+| **Edge** | Cloudflare Worker in `cloudflare/`: landing page, API gateway with server-side key, per-IP rate limit, edge cache, dashboard at `/app`, waitlist capture |
 
 The full product guide — API reference, configuration, deployment, model
 card, limits — is in [docs/PRODUCT.md](docs/PRODUCT.md). The competitive
@@ -106,6 +107,10 @@ timesfm3/
   assets/            # bundled starter checkpoint
 scripts/
   train_starter.py        # reproduces the bundled starter model
+cloudflare/
+  src/worker.js           # edge gateway + lead capture (Workers, KV, static assets)
+  public/index.html       # landing page with live demo, pricing, waitlist
+  wrangler.jsonc          # bindings, vars; `make edge-dev`, `make edge-deploy`
 examples/
   forecast_example.py     # API demo: multivariate targets + covariates
   plot_forecast.py        # point + q10-q90 band vs ground truth

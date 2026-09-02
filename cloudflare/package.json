@@ -1,0 +1,17 @@
+{
+  "name": "timesfm3-edge",
+  "version": "0.3.1",
+  "private": true,
+  "description": "Cloudflare Workers front end: landing page, API gateway, dashboard proxy, lead capture for the TimesFM-3 Forecast Service.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8787",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "secrets": "sh -c 'for s in API_KEY ADMIN_TOKEN LEADS_WEBHOOK; do echo \"--- $s\"; wrangler secret put $s; done'",
+    "leads": "sh -c 'curl -s -H \"authorization: Bearer $ADMIN_TOKEN\" \"$EDGE_URL/api/leads\" | python3 -m json.tool'"
+  },
+  "devDependencies": {
+    "wrangler": "^4.128.0"
+  }
+}

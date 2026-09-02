@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.1 — Cloudflare edge front end
+
+- `cloudflare/`: one Worker (no build step) serving the landing page with a
+  live forecast demo, pricing and waitlist; proxying `/v1/*`, `/healthz`,
+  `/docs` to the service with the upstream key attached server-side
+  (bring-your-own-key passes through); per-IP rate limiting and lead
+  storage in Workers KV; 60 s edge cache for `/v1/models`, `/v1/sample`,
+  `/healthz`; dashboard at `/app`; `/api/leads` for the founder;
+  `/metrics` never exposed. GitHub Actions deploy on push to `main`.
+
 ## 0.3.0 — what the market sells
 
 Driven by the competitive research in `docs/BUSINESS.md`.

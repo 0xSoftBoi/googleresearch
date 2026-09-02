@@ -316,6 +316,17 @@ gateway; quotas here are monthly.
 | `TIMESFM3_MAX_CONTEXT` | `16384` | Context steps per request |
 | `PORT` | `8000` | Listen port |
 
+### Cloudflare edge front end
+
+`cloudflare/` is a single Worker that serves the marketing site, proxies
+the API with the upstream key held server-side, rate-limits per IP in KV,
+caches the cheap GETs at the edge, serves the dashboard at `/app`, and
+captures signups (`POST /api/waitlist`, `GET /api/leads` with an admin
+token). Run it locally with `make edge-dev` against `timesfm3 serve`, deploy
+with `make edge-deploy` (needs `CLOUDFLARE_API_TOKEN`), or let
+`.github/workflows/cloudflare.yml` deploy on push. Details in
+[cloudflare/README.md](../cloudflare/README.md).
+
 ## Operating it
 
 - **Throughput.** Inference runs in a thread pool; the classical models take

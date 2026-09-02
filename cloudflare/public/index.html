@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TimesFM-3 Forecast Service — production forecasting you can audit</title>
+<meta name="description" content="Self-hosted time-series forecasting on the TimesFM-3 architecture with commercially usable weights, quantile bands, anomaly detection, fine-tuning, and a backtest that tells you whether the model beats a random walk on your data.">
+<meta property="og:title" content="TimesFM-3 Forecast Service">
+<meta property="og:description" content="The TimesFM-3 architecture with weights you can run in production. One container. Honest backtests.">
+<link rel="icon" href="/favicon.ico">
+<style>
+  :root{--bg:#0f1115;--panel:#171a21;--line:#262b36;--text:#e6e8ee;--muted:#8b93a7;--accent:#5b9cff;--good:#3ecf8e;--bad:#ff6b6b;--warn:#f5b73b}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--text);font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+  .wrap{max-width:1100px;margin:0 auto;padding:0 22px}
+  header{position:sticky;top:0;z-index:5;background:rgba(15,17,21,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  header .wrap{display:flex;align-items:center;justify-content:space-between;height:58px}
+  .brand{font-weight:700;letter-spacing:-.01em}.brand span{color:var(--muted);font-weight:400;margin-left:8px;font-size:13px}
+  nav a{color:var(--muted);margin-left:18px;font-size:14px}nav a:hover{color:var(--text);text-decoration:none}
+  .btn{display:inline-block;background:var(--accent);color:#fff!important;font-weight:600;padding:10px 16px;border-radius:8px;border:1px solid var(--accent);cursor:pointer;font:inherit}
+  .btn:hover{text-decoration:none;filter:brightness(1.1)}.btn.ghost{background:transparent;color:var(--text)!important;border-color:var(--line)}
+  section{padding:64px 0;border-bottom:1px solid var(--line)}
+  h1{font-size:clamp(30px,5vw,50px);line-height:1.1;letter-spacing:-.02em;margin:0 0 16px}
+  h2{font-size:26px;letter-spacing:-.01em;margin:0 0 8px}h3{font-size:16px;margin:0 0 6px}
+  .lead{font-size:18px;color:var(--muted);max-width:720px}
+  .hero{padding:80px 0 56px}.hero .cta{display:flex;gap:10px;flex-wrap:wrap;margin-top:24px}
+  .kicker{color:var(--accent);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.08em}
+  .grid{display:grid;gap:16px}.g2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}.g3{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}.g4{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+  .card p{color:var(--muted);margin:0;font-size:14px}
+  pre{background:#0b0d11;border:1px solid var(--line);border-radius:10px;padding:14px;overflow-x:auto;font-size:13px;line-height:1.5;margin:0}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .demo{display:grid;grid-template-columns:1fr 1.4fr;gap:16px;align-items:start}@media(max-width:800px){.demo{grid-template-columns:1fr}}
+  svg{width:100%;height:260px;display:block}
+  .stat{display:inline-block;margin:0 14px 4px 0;color:var(--muted);font-size:12px}.stat b{color:var(--text)}
+  table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums}th:first-child,td:first-child{text-align:left}th{color:var(--muted);font-weight:500}
+  .better{color:var(--good)}.nodiff{color:var(--muted)}.ref{color:var(--warn)}
+  .price{font-size:32px;font-weight:700;margin:6px 0}.price small{font-size:13px;color:var(--muted);font-weight:400}
+  .tier ul{padding-left:18px;margin:10px 0 14px;color:var(--muted);font-size:14px}.tier.hi{border-color:var(--accent)}
+  form{display:grid;gap:10px;max-width:520px}input,select,textarea{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;width:100%}textarea{min-height:80px;resize:vertical}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:560px){.row{grid-template-columns:1fr}}
+  .msg{font-size:14px;color:var(--muted);min-height:20px}.msg.ok{color:var(--good)}.msg.err{color:var(--bad)}
+  .faq details{border-top:1px solid var(--line);padding:12px 0}.faq summary{cursor:pointer;font-weight:600}.faq p{color:var(--muted);margin:8px 0 0}
+  footer{padding:28px 0;color:var(--muted);font-size:13px}footer a{color:var(--muted)}
+  .hp{position:absolute;left:-9999px;opacity:0;height:0;width:0}
+  .badge{display:inline-block;font-size:12px;border:1px solid var(--line);border-radius:999px;padding:2px 10px;color:var(--muted);margin-bottom:12px}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="brand">TimesFM-3 Forecast Service<span>open core</span></div>
+  <nav><a href="#demo">Demo</a><a href="#how">How it works</a><a href="#benchmark">Benchmark</a><a href="#pricing">Pricing</a><a href="/docs">API</a><a href="/app">Dashboard</a><a href="https://github.com/0xSoftBoi/googleresearch" rel="noopener">GitHub</a></nav>
+</div></header>
+
+<section class="hero"><div class="wrap">
+  <div class="badge">Apache-2.0 code <b>and</b> weights · Google's TimesFM-3 weights are non-commercial</div>
+  <h1>Production forecasting you can audit.</h1>
+  <p class="lead">The TimesFM-3 architecture with weights you are allowed to run in production, self-hosted in one container, with quantile bands, anomaly detection, fine-tuning on your data — and a backtest that tells you, with real statistics, whether the model beats a random walk on <em>your</em> series before you pay for anything.</p>
+  <div class="cta"><a class="btn" href="#signup">Get early access</a><a class="btn ghost" href="/app">Try the dashboard</a><a class="btn ghost" href="https://github.com/0xSoftBoi/googleresearch" rel="noopener">Self-host it (free)</a></div>
+</div></section>
+
+<section id="demo"><div class="wrap">
+  <div class="kicker">Live demo</div>
+  <h2>A zero-shot forecast, right now, from this edge</h2>
+  <p class="lead">Held-out electricity-transformer telemetry (ETTh2, never seen in training). The request goes through a Cloudflare Worker to the service; the model has never seen this series.</p>
+  <div class="demo" style="margin-top:20px">
+    <div class="card">
+      <pre><code id="curl">curl -s -X POST <span id="host">https://your-edge</span>/v1/forecast \
+  -H 'content-type: application/json' \
+  -d '{"targets":[{"name":"load","values":[…]}],
+       "horizon":48}'</code></pre>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="run">Run forecast</button><select id="series" style="width:auto"></select><select id="model" style="width:auto"></select></div>
+      <div class="msg" id="demo-msg" style="margin-top:8px"></div>
+    </div>
+    <div class="card"><div id="stats" class="stat"></div><svg id="chart" viewBox="0 0 800 260" preserveAspectRatio="none"></svg></div>
+  </div>
+</div></section>
+
+<section id="how"><div class="wrap">
+  <div class="kicker">How it works</div>
+  <h2>Three commands from clone to production</h2>
+  <div class="grid g3" style="margin-top:20px">
+    <div class="card"><h3>1 · Run it</h3><pre><code>docker compose up --build
+# or: pip install "timesfm3[serve]" && timesfm3 serve</code></pre><p style="margin-top:10px">CPU-first, ~1 GB image, health-checked, bundled 5.2M-parameter starter model. No BigQuery, no $12k/month.</p></div>
+    <div class="card"><h3>2 · Prove it on your data</h3><pre><code>timesfm3 backtest sales.csv \
+  --context 256 --horizon 24</code></pre><p style="margin-top:10px">Walk-forward, cluster-bootstrap CIs, HAC Diebold–Mariano with Holm correction. Verdicts: <span class="better">better</span> / <span class="nodiff">no difference</span> / worse.</p></div>
+    <div class="card"><h3>3 · Make it yours</h3><pre><code>timesfm3 finetune sales.csv \
+  --out sales-v1.pt --steps 300</code></pre><p style="margin-top:10px">Fine-tunes on the first 80%, validates on the rest, and prints the same backtest for base vs fine-tuned vs classical.</p></div>
+  </div>
+  <div class="grid g4" style="margin-top:16px">
+    <div class="card"><h3>Quantile bands</h3><p>Point + q10…q90 per series and step; covariates known ahead of time steer the forecast.</p></div>
+    <div class="card"><h3>Anomaly detection</h3><p><code>/v1/anomalies</code> scores every point against the forecast made before it was seen.</p></div>
+    <div class="card"><h3>Volatility &amp; sizing</h3><p>HAR + RiskMetrics variance forecasts and vol-targeted weights for risk desks.</p></div>
+    <div class="card"><h3>Metered keys</h3><p>Plans, monthly quotas, usage headers, <code>/v1/usage</code>, Prometheus metrics, OpenAPI.</p></div>
+  </div>
+</div></section>
+
+<section id="benchmark"><div class="wrap">
+  <div class="kicker">The honest number</div>
+  <h2>What the bundled model measures on data it has never seen</h2>
+  <p class="lead">ETTh2, 7 series, context 256, horizon 24, 140 non-overlapping windows. MAE ratio vs last-value; p-values are HAC Diebold–Mariano, Holm-corrected. The starter model has the lowest error and wins 78% of windows — and the test says that is <em>not yet</em> significant at 5%. We publish it anyway; the point of the product is that you get this table for your own data.</p>
+  <div class="card" style="margin-top:20px;overflow-x:auto"><table>
+    <tr><th>model</th><th>mean MAE</th><th>ratio</th><th>95% CI</th><th>p (Holm)</th><th>win rate</th><th>verdict</th></tr>
+    <tr><td><b>starter-small</b> (TimesFM-3, 5.2M)</td><td>2.183</td><td><b>0.881</b></td><td>[0.751, 1.008]</td><td>0.085</td><td>78%</td><td class="nodiff">no difference</td></tr>
+    <tr><td>ewma</td><td>2.309</td><td>0.931</td><td>[0.854, 0.982]</td><td>0.000</td><td>65%</td><td class="better">better</td></tr>
+    <tr><td>ar4</td><td>2.432</td><td>0.981</td><td>[0.864, 1.073]</td><td>1.000</td><td>61%</td><td class="nodiff">no difference</td></tr>
+    <tr><td>last-value</td><td>2.479</td><td class="ref">1.000</td><td>—</td><td>—</td><td>—</td><td class="ref">reference</td></tr>
+    <tr><td>drift</td><td>2.488</td><td>1.004</td><td>[0.993, 1.015]</td><td>1.000</td><td>51%</td><td class="nodiff">no difference</td></tr>
+  </table></div>
+  <p style="color:var(--muted);font-size:14px;margin-top:12px">Anomaly detection on seasonal data with two planted spikes: the bundled model flags exactly those two with zero false alarms; EWMA misses one and raises five. The 334M <code>base</code> configuration trained on GPU is the roadmap item that closes the forecasting gap — Enterprise customers get it first.</p>
+</div></section>
+
+<section id="pricing"><div class="wrap">
+  <div class="kicker">Pricing</div>
+  <h2>Open core. Pay for the parts that run for you.</h2>
+  <p class="lead">Billed in <b>forecast points</b>: one series × one horizon step. An hourly series forecast 48 h ahead every hour is ~35k points/month; 500 SKUs, daily, 30 days out is ~450k.</p>
+  <div class="grid g4" style="margin-top:20px">
+    <div class="card tier"><h3>Community</h3><div class="price">$0</div><ul><li>Everything, self-hosted</li><li>Apache-2.0 code + weights</li><li>Starter model, CLI, dashboard</li><li>Community support</li></ul><a class="btn ghost" href="https://github.com/0xSoftBoi/googleresearch" rel="noopener">Clone it</a></div>
+    <div class="card tier"><h3>Cloud Starter</h3><div class="price">$49<small>/month</small></div><ul><li>Hosted API, 2M points/month</li><li>3 API keys, usage dashboard</li><li>Forecast + backtest endpoints</li><li>Email support</li></ul><a class="btn" href="#signup" data-plan="starter">Join waitlist</a></div>
+    <div class="card tier hi"><h3>Cloud Team</h3><div class="price">$299<small>/month</small></div><ul><li>20M points/month, $0.02 per extra 1,000</li><li>Anomaly + volatility endpoints</li><li>Fine-tuning jobs on your data</li><li>10 keys, priority support</li></ul><a class="btn" href="#signup" data-plan="team">Join waitlist</a></div>
+    <div class="card tier"><h3>Enterprise</h3><div class="price">from $2k<small>/month</small></div><ul><li>Private image, on-prem or VPC</li><li>Larger checkpoints (base config)</li><li>Fine-tuning on your corpus</li><li>SSO, SLA, commercial warranty</li></ul><a class="btn ghost" href="#signup" data-plan="enterprise">Talk to us</a></div>
+  </div>
+</div></section>
+
+<section id="signup"><div class="wrap">
+  <div class="kicker">Early access</div>
+  <h2>Tell us what you need to forecast</h2>
+  <p class="lead">Design partners get Cloud Team free for three months in exchange for a case study — published either way, because the honesty is the brand.</p>
+  <form id="wl" style="margin-top:20px" autocomplete="on">
+    <div class="row"><input name="email" type="email" placeholder="work email" required><input name="company" placeholder="company (optional)"></div>
+    <div class="row"><select name="plan"><option value="starter">Cloud Starter</option><option value="team" selected>Cloud Team</option><option value="enterprise">Enterprise / self-hosted</option><option value="community">Just self-hosting</option></select><input name="source" type="hidden" value="landing"></div>
+    <textarea name="use_case" placeholder="what are you forecasting? how many series, what frequency, what horizon?"></textarea>
+    <input class="hp" name="website" tabindex="-1" autocomplete="off">
+    <div style="display:flex;gap:10px;align-items:center"><button class="btn" type="submit">Request access</button><span class="msg" id="wl-msg"></span></div>
+  </form>
+</div></section>
+
+<section class="faq"><div class="wrap">
+  <div class="kicker">FAQ</div>
+  <h2>Straight answers</h2>
+  <details open><summary>Is this Google's TimesFM-3?</summary><p>No. It is an independent Apache-2.0 implementation of the architecture Google described, with weights we trained ourselves. Google's own weights, released 31 August 2026, are licensed for non-commercial, non-production use only. Ours can be used commercially. We are not affiliated with Google.</p></details>
+  <details><summary>How good is the bundled model?</summary><p>Small (5.2M parameters, trained on CPU on public data) and honestly benchmarked above: lowest error on held-out data, not yet statistically significant. Run <code>timesfm3 backtest</code> on your series; if the verdict is "no difference", use the free EWMA baseline — we will have told you first. Larger checkpoints are the Enterprise tier.</p></details>
+  <details><summary>Does my data leave my perimeter?</summary><p>Self-hosted: never. The hosted tiers run the same container behind this Cloudflare edge; requests are metered, not stored.</p></details>
+  <details><summary>What about Chronos, Granite, TimeGPT, BigQuery AI.FORECAST?</summary><p>Chronos and Granite are good Apache-licensed <em>models</em>; this is the service layer around a model, and the registry can serve other checkpoints. TimeGPT starts around $12k/month and is closed. BigQuery needs your data in BigQuery. See the <a href="https://github.com/0xSoftBoi/googleresearch/blob/main/docs/BUSINESS.md">market map</a>.</p></details>
+</div></section>
+
+<footer><div class="wrap">TimesFM-3 Forecast Service · <a href="/docs">API docs</a> · <a href="/app">dashboard</a> · <a href="https://github.com/0xSoftBoi/googleresearch">source</a> · served from Cloudflare <span id="colo"></span> · nothing here is investment advice.</div></footer>
+
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  $('host').textContent=location.origin;
+  let sample=null;
+  const fmt=v=>Math.abs(v)>=1000?v.toFixed(0):Math.abs(v)>=10?v.toFixed(1):v.toFixed(2);
+  async function api(path,opts){const r=await fetch(path,opts);const t=await r.text();let j;try{j=JSON.parse(t)}catch(e){j={detail:t}}if(!r.ok)throw new Error(typeof j.detail==='string'?j.detail:JSON.stringify(j.detail));return j;}
+  function draw(hist,f){
+    const tail=hist.slice(-144).map(v=>v===null?null:v);const n=tail.length,h=f.point.length,W=800,H=260,pad={l:48,r:12,t:10,b:22};
+    const q=f.quantiles||{};const all=tail.filter(v=>v!==null).concat(f.point,q.q10||[],q.q90||[]);
+    let lo=Math.min.apply(null,all),hi=Math.max.apply(null,all);if(hi===lo){hi+=1;lo-=1;}const m=(hi-lo)*.06;lo-=m;hi+=m;
+    const x=k=>pad.l+(W-pad.l-pad.r)*k/(n+h-1),y=v=>pad.t+(H-pad.t-pad.b)*(1-(v-lo)/(hi-lo));
+    const path=(arr,off)=>{let d='',pen=false;arr.forEach((v,k)=>{if(v===null){pen=false;return;}d+=(pen?'L':'M')+x(off+k).toFixed(1)+' '+y(v).toFixed(1)+' ';pen=true;});return d;};
+    const band=(a,b)=>{if(!a||!b)return '';let d='M';a.forEach((v,k)=>d+=x(n+k).toFixed(1)+' '+y(v).toFixed(1)+' L');d=d.slice(0,-1);for(let k=b.length-1;k>=0;k--)d+=' L'+x(n+k).toFixed(1)+' '+y(b[k]).toFixed(1);return d+' Z';};
+    let s='';for(let g=0;g<4;g++){const v=lo+(hi-lo)*g/3;s+='<line x1="'+pad.l+'" x2="'+(W-pad.r)+'" y1="'+y(v).toFixed(1)+'" y2="'+y(v).toFixed(1)+'" stroke="#262b36"/><text x="'+(pad.l-6)+'" y="'+(y(v)+4).toFixed(1)+'" fill="#8b93a7" font-size="11" text-anchor="end">'+fmt(v)+'</text>';}
+    s+='<line x1="'+x(n-1).toFixed(1)+'" x2="'+x(n-1).toFixed(1)+'" y1="'+pad.t+'" y2="'+(H-pad.b)+'" stroke="#8b93a7" stroke-dasharray="4 4"/>';
+    s+='<path d="'+band(q.q10,q.q90)+'" fill="#5b9cff" opacity=".2"/><path d="'+band(q.q30,q.q70)+'" fill="#5b9cff" opacity=".45"/>';
+    s+='<path d="'+path(tail,0)+'" fill="none" stroke="#e6e8ee" stroke-width="1.4"/><path d="'+path([tail[n-1]].concat(f.point),n-1)+'" fill="none" stroke="#5b9cff" stroke-width="2"/>';
+    $('chart').innerHTML=s;
+  }
+  async function load(){
+    try{
+      const [s,models,edge]=await Promise.all([api('/v1/sample?n=480'),api('/v1/models'),api('/api/edge').catch(()=>null)]);
+      sample=s;const ss=$('series');ss.innerHTML='';s.names.forEach((n,i)=>{const o=document.createElement('option');o.value=i;o.textContent=n;ss.appendChild(o);});
+      const ms=$('model');ms.innerHTML='';models.forEach(m=>{const o=document.createElement('option');o.value=m.name;o.textContent=m.name+(m.default?' ★':'');if(m.default)o.selected=true;ms.appendChild(o);});
+      if(edge&&edge.colo)$('colo').textContent='('+edge.colo+')';
+      run();
+    }catch(e){$('demo-msg').textContent='Demo unavailable: '+e.message;$('demo-msg').className='msg err';}
+  }
+  async function run(){
+    if(!sample)return;const i=+$('series').value||0;$('run').disabled=true;$('demo-msg').textContent='forecasting…';$('demo-msg').className='msg';
+    try{
+      const r=await fetch('/v1/forecast',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({targets:[{name:sample.names[i],values:sample.values[i]}],horizon:48,model:$('model').value||null,timestamps:sample.timestamps})});
+      const j=await r.json();if(!r.ok)throw new Error(typeof j.detail==='string'?j.detail:JSON.stringify(j.detail));
+      draw(sample.values[i],j.forecasts[0]);
+      $('stats').innerHTML='<span class="stat">model <b>'+j.model+'</b></span><span class="stat">horizon <b>'+j.horizon+'</b></span><span class="stat">latency <b>'+j.latency_ms.toFixed(0)+' ms</b></span>'+(r.headers.get('x-usage-points')?'<span class="stat">points <b>'+r.headers.get('x-usage-points')+'</b></span>':'')+(r.headers.get('x-edge-cache')?'<span class="stat">edge <b>'+r.headers.get('x-edge-cache')+'</b></span>':'');
+      $('demo-msg').textContent='';
+    }catch(e){$('demo-msg').textContent=e.message;$('demo-msg').className='msg err';}finally{$('run').disabled=false;}
+  }
+  $('run').onclick=run;$('series').onchange=run;$('model').onchange=run;
+  document.querySelectorAll('a[data-plan]').forEach(a=>a.addEventListener('click',()=>{document.querySelector('#wl select[name=plan]').value=a.dataset.plan;}));
+  $('wl').addEventListener('submit',async e=>{
+    e.preventDefault();const f=e.target;const data=Object.fromEntries(new FormData(f).entries());const msg=$('wl-msg');msg.textContent='sending…';msg.className='msg';
+    try{const j=await api('/api/waitlist',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(data)});msg.textContent=j.duplicate?'You are already on the list — we will be in touch.':'Thanks — you are on the list.';msg.className='msg ok';f.reset();}
+    catch(err){msg.textContent=err.message;msg.className='msg err';}
+  });
+  load();
+})();
+</script>
+</body>
+</html>

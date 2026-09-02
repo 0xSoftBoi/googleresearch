@@ -27,3 +27,14 @@ starter-model: data ## retrain the bundled checkpoint (~35 min on 4 CPU cores)
 clean:
 	rm -rf build dist *.egg-info .pytest_cache
 	find . -name __pycache__ -type d -prune -exec rm -rf {} +
+
+# ---- Cloudflare edge front end (cloudflare/) ----
+.PHONY: edge-install edge-dev edge-deploy
+edge-install:
+	cd cloudflare && npm install
+
+edge-dev:           ## landing + gateway on :8787, proxying a local `timesfm3 serve`
+	cd cloudflare && npx wrangler dev --port 8787 --var API_ORIGIN:http://localhost:8000 --var ADMIN_TOKEN:dev
+
+edge-deploy:        ## needs CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID
+	cd cloudflare && npx wrangler deploy

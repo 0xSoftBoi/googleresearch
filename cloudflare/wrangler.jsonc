@@ -1,0 +1,32 @@
+// Cloudflare edge front end for the TimesFM-3 Forecast Service.
+//   npx wrangler dev            # local, against API_ORIGIN
+//   npx wrangler deploy         # needs CLOUDFLARE_API_TOKEN (Workers Scripts:Edit, KV:Edit)
+//   npx wrangler secret put API_KEY / ADMIN_TOKEN / LEADS_WEBHOOK
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "timesfm3-edge",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": true,
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash"
+  },
+  "kv_namespaces": [
+    // Created 2026-09-02 in the connected account ("timesfm3-edge").
+    { "binding": "EDGE_KV", "id": "1df8ae6bdb5a41eabdd00beb32118817" }
+  ],
+  "vars": {
+    // Where the self-hosted service runs (Docker image, port 8000). Override per
+    // environment or with `--var API_ORIGIN:https://...` for wrangler dev.
+    "API_ORIGIN": "https://api.timesfm3.example.com",
+    "RATE_LIMIT_PER_MINUTE": "30",
+    "MAX_BODY_BYTES": "1048576",
+    "ALLOWED_ORIGINS": "*"
+  }
+  // Custom domain (uncomment after adding the zone to the account):
+  // "routes": [{ "pattern": "forecast.example.com", "custom_domain": true }]
+}
