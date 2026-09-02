@@ -38,3 +38,7 @@ edge-dev:           ## landing + gateway on :8787, proxying a local `timesfm3 se
 
 edge-deploy:        ## needs CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID
 	cd cloudflare && npx wrangler deploy
+
+edge-tunnel:        ## public URL in ~10 s, no Cloudflare account: Quick Tunnel to the local edge
+	@command -v cloudflared >/dev/null || { echo "install cloudflared: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/"; exit 1; }
+	cloudflared tunnel --url http://localhost:8787 --no-autoupdate

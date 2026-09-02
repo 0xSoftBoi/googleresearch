@@ -50,6 +50,20 @@ Edit); `.github/workflows/cloudflare.yml` does the same on push when the
 The Worker lands at `timesfm3-edge.<account>.workers.dev`; attach a custom
 domain in the dashboard when you have one.
 
+## Public URL with no account at all (Quick Tunnel)
+
+```bash
+make edge-dev                 # terminal 1: Worker on :8787 (edge-native, or gateway with API_ORIGIN)
+make edge-tunnel              # terminal 2: prints https://<random>.trycloudflare.com
+```
+
+Cloudflare Quick Tunnels need no account, token or DNS: `cloudflared`
+opens an outbound connection and Cloudflare hands out a public
+`trycloudflare.com` hostname for as long as the process runs. It is the
+fastest way to put the full stack (including a local `timesfm3 serve` with
+the neural model, via `API_ORIGIN`) in front of someone today; the Worker
+deploy below is the permanent, always-on version.
+
 ## Run locally
 
 ```bash
