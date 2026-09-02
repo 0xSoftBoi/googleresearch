@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.0 — the whole product on Cloudflare's free tier
+
+- `scripts/export_onnx.py`: TimesFM-3 checkpoints export to ONNX (dynamic
+  series/time axes, horizon as a tensor input) with a PyTorch parity check.
+- `cloudflare/public/js/timesfm3-onnx.js`: the model runs in the browser via
+  ONNX Runtime Web with the Python forecaster's padding, rolling decode and
+  quantile repair.
+- `cloudflare/public/js/forecast.js`: JS port of the classical baselines,
+  empirical bands, Diebold–Mariano / bootstrap / Holm, walk-forward backtest
+  and anomaly scoring; `tests/test_js_parity.py` pins it to the Python
+  numbers.
+- The Worker now has an edge-native mode (no `API_ORIGIN`): `/v1/forecast`,
+  `/v1/backtest`, `/v1/anomalies` for classical models in the free plan's
+  CPU budget, `/v1/models`, `/v1/sample`, `/healthz`, a static `/docs`, and
+  the in-browser dashboard at `/app`. Rate limiting moved to the Workers
+  rate-limit binding (no KV writes).
+- Deploy-to-Cloudflare button; no token, no server, no bill.
+
 ## 0.3.1 — Cloudflare edge front end
 
 - `cloudflare/`: one Worker (no build step) serving the landing page with a

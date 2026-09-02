@@ -1,0 +1,28 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>API — TimesFM-3 Forecast Service</title>
+<style>body{margin:0;background:#0f1115;color:#e6e8ee;font:15px/1.55 system-ui,sans-serif}main{max-width:900px;margin:0 auto;padding:32px 22px}a{color:#5b9cff}h1{letter-spacing:-.02em}h2{margin-top:32px;font-size:18px}pre{background:#0b0d11;border:1px solid #262b36;border-radius:8px;padding:12px;overflow-x:auto;font-size:13px}code{font-family:ui-monospace,Menlo,monospace}table{border-collapse:collapse;width:100%;font-size:14px}td,th{border-bottom:1px solid #262b36;padding:6px 8px;text-align:left}th{color:#8b93a7;font-weight:500}.muted{color:#8b93a7}</style></head>
+<body><main>
+<p><a href="/">← home</a> · <a href="/app">dashboard</a> · <a href="https://github.com/0xSoftBoi/googleresearch/blob/main/docs/PRODUCT.md">full product guide</a></p>
+<h1>API on the free edge</h1>
+<p>This deployment runs entirely on Cloudflare's free tier. The classical forecasters answer at the edge in JavaScript; the TimesFM-3 model runs <em>in your browser</em> at <a href="/app">/app</a> (nothing is uploaded). The self-hosted service (<code>docker compose up</code>) exposes the same endpoints with the neural model server-side, API keys, metering, volatility forecasts and OpenAPI docs.</p>
+<table><tr><th>endpoint</th><th>here (free edge)</th><th>self-hosted</th></tr>
+<tr><td><code>GET /healthz</code>, <code>GET /v1/models</code>, <code>GET /v1/sample</code></td><td>yes</td><td>yes</td></tr>
+<tr><td><code>POST /v1/forecast</code></td><td>classical models (≤32 series, ≤4096 context, ≤512 horizon)</td><td>all models, covariates</td></tr>
+<tr><td><code>POST /v1/backtest</code></td><td>classical models (≤4 series, ≤10 windows; the dashboard at /app runs any size locally)</td><td>all models</td></tr>
+<tr><td><code>POST /v1/anomalies</code></td><td>classical models (≤4 series)</td><td>all models</td></tr>
+<tr><td><code>POST /v1/volatility</code>, <code>GET /v1/usage</code>, API keys</td><td class="muted">self-hosted only</td><td>yes</td></tr></table>
+<h2>Forecast</h2>
+<pre><code>curl -s -X POST /v1/forecast -H 'content-type: application/json' \
+  -d '{"targets":[{"name":"sales","values":[12,15,14,18,21,19,24,27,25,30,33,31]}],
+       "horizon":4,"model":"ewma","timestamps":["2024-01-01","...","2024-01-12"]}'</code></pre>
+<p>Returns <code>forecasts[].point</code> and <code>forecasts[].quantiles.q10…q90</code>, future <code>timestamps</code> when you pass context timestamps (spacing inferred, or set <code>"freq":"D"</code>), and <code>latency_ms</code>. Models: <code>last-value</code>, <code>ctx-mean</code>, <code>drift</code>, <code>ewma</code> (default), <code>ar1</code>, <code>ar4</code>.</p>
+<h2>Backtest</h2>
+<pre><code>curl -s -X POST /v1/backtest -H 'content-type: application/json' \
+  -d '{"series":[{"values":[...]}],"context":96,"horizon":24,"windows":10,"models":["ewma","ar4"]}'</code></pre>
+<p>Walk-forward, non-overlapping windows; per model: mean loss, ratio vs <code>last-value</code>, cluster-bootstrap 95% CI, HAC Diebold–Mariano p-value with Holm correction, win rate, effective sample size, verdict.</p>
+<h2>Anomalies</h2>
+<pre><code>curl -s -X POST /v1/anomalies -H 'content-type: application/json' \
+  -d '{"series":[{"name":"cpu","values":[...]}],"model":"ewma","context":96,"block":24,"threshold":2}'</code></pre>
+<p>Each point is scored against the forecast made before it was seen; <code>score = 1</code> is the q10/q90 band edge, so 2 is roughly 2.6σ for a Gaussian band.</p>
+<h2>Limits</h2>
+<p>30 requests per minute per IP. Requests over the size limits above return <code>413</code>; asking the edge for the TimesFM-3 model returns <code>400</code> pointing at <a href="/app">/app</a>. Errors are <code>{"detail": "..."}</code>.</p>
+</main></body></html>

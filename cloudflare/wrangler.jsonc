@@ -13,16 +13,24 @@
     "directory": "./public",
     "binding": "ASSETS",
     "not_found_handling": "404-page",
-    "html_handling": "auto-trailing-slash"
+    "html_handling": "none",
+    // Route every request through the Worker (it falls back to ASSETS.fetch);
+    // otherwise browser navigations to /app or /docs hit the 404 page first.
+    "run_worker_first": true
   },
   "kv_namespaces": [
-    // Created 2026-09-02 in the connected account ("timesfm3-edge").
+    // Created 2026-09-02 in the connected account ("timesfm3-edge"); holds leads only.
     { "binding": "EDGE_KV", "id": "1df8ae6bdb5a41eabdd00beb32118817" }
   ],
+  // Per-IP limit through the Workers rate-limit binding (free; no KV writes).
+  "ratelimits": [
+    { "name": "RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }
+  ],
   "vars": {
-    // Where the self-hosted service runs (Docker image, port 8000). Override per
-    // environment or with `--var API_ORIGIN:https://...` for wrangler dev.
-    "API_ORIGIN": "https://api.timesfm3.example.com",
+    // Leave API_ORIGIN empty for the free edge-native mode (classical models in
+    // the Worker, TimesFM-3 in the browser). Set it to a self-hosted
+    // `timesfm3 serve` to turn the Worker into a gateway for the full API.
+    "API_ORIGIN": "",
     "RATE_LIMIT_PER_MINUTE": "30",
     "MAX_BODY_BYTES": "1048576",
     "ALLOWED_ORIGINS": "*"

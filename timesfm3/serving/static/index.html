@@ -88,7 +88,7 @@
     if(!lines.length)throw new Error('No data.');
     const delim=(lines[0].split('\t').length>lines[0].split(',').length)?'\t':',';
     let rows=lines.map(l=>l.split(delim).map(c=>c.trim()));
-    const isNum=c=>c===''||/^(nan|na|null)$/i.test(c)||!isNaN(parseFloat(c));
+    const isNum=c=>c===''||/^(nan|na|null)$/i.test(c)||/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(c);
     let names=null;
     if(rows[0].slice(1).some(c=>!isNum(c))||(rows[0].length===1&&!isNum(rows[0][0]))){names=rows[0];rows=rows.slice(1);}
     if(!rows.length)throw new Error('Header only.');
@@ -97,7 +97,7 @@
     const width=rows[0].length;
     const timestamps=hasTime?rows.map(r=>r[0]):null;
     const values=[];
-    for(let j=start;j<width;j++)values.push(rows.map((r,i)=>{if(r.length!==width)throw new Error('Row '+(i+1)+' has '+r.length+' cells, expected '+width);const c=r[j];const v=parseFloat(c);return (c===''||isNaN(v))?null:v;}));
+    for(let j=start;j<width;j++)values.push(rows.map((r,i)=>{if(r.length!==width)throw new Error('Row '+(i+1)+' has '+r.length+' cells, expected '+width);const c=r[j];const v=Number(c);return (c===''||/^(nan|na|null)$/i.test(c)||isNaN(v))?null:v;}));
     const nm=(names&&names.length===width)?names.slice(start):values.map((_,j)=>'series_'+j);
     return {names:nm,timestamps,values};
   }

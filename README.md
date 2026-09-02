@@ -1,5 +1,7 @@
 # TimesFM-3 Forecast Service
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/0xSoftBoi/googleresearch/tree/main/cloudflare)
+
 **Self-hosted time-series forecasting with quantile bands, a REST API, a
 dashboard, and a backtest that tells you whether the model beats a random
 walk on your own data.** Built on an independent PyTorch implementation of
@@ -35,7 +37,7 @@ docker compose up --build                                    # same thing, conta
 | **Ops** | API keys with plans and monthly quotas, usage metering, request limits, `/healthz`, Prometheus `/metrics`, OpenAPI, Docker image, CI |
 | **License** | Apache-2.0 code **and weights** — Google's own TimesFM-3 weights are non-commercial; these are self-trained (`NOTICE`) |
 | **Clients** | `timesfm3` CLI, `timesfm3.client.ForecastClient` (stdlib only) |
-| **Edge** | Cloudflare Worker in `cloudflare/`: landing page, API gateway with server-side key, per-IP rate limit, edge cache, dashboard at `/app`, waitlist capture |
+| **Free edge** | Cloudflare Worker in `cloudflare/` that needs no backend: landing page, classical-model API in JS at the edge, TimesFM-3 running in the browser via ONNX Runtime, waitlist capture in KV, per-IP rate limit. Set `API_ORIGIN` and it becomes a gateway for the self-hosted service |
 
 The full product guide — API reference, configuration, deployment, model
 card, limits — is in [docs/PRODUCT.md](docs/PRODUCT.md). The competitive
@@ -108,9 +110,13 @@ timesfm3/
 scripts/
   train_starter.py        # reproduces the bundled starter model
 cloudflare/
-  src/worker.js           # edge gateway + lead capture (Workers, KV, static assets)
+  src/worker.js           # edge-native API (classical models in JS) or gateway; leads; rate limit
   public/index.html       # landing page with live demo, pricing, waitlist
-  wrangler.jsonc          # bindings, vars; `make edge-dev`, `make edge-deploy`
+  public/app/index.html   # dashboard: TimesFM-3 in the browser (ONNX Runtime) + local backtests
+  public/js/forecast.js   # JS port of baselines, bands, DM/bootstrap/Holm, backtest, anomalies
+  public/js/timesfm3-onnx.js  # browser wrapper reproducing the Python forecaster around the ONNX graph
+  public/models/          # starter-small.onnx (21 MB) + model card, from scripts/export_onnx.py
+  wrangler.jsonc          # KV + rate-limit bindings; `make edge-dev`, `make edge-deploy`
 examples/
   forecast_example.py     # API demo: multivariate targets + covariates
   plot_forecast.py        # point + q10-q90 band vs ground truth

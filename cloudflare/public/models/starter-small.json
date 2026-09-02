@@ -1,0 +1,39 @@
+{
+  "created": "2026-09-01T23:28:44+00:00",
+  "timesfm3_version": "0.1.0",
+  "dtype": "float16",
+  "name": "starter-small",
+  "description": "TimesFM-3 small config pre-trained on ETTh1/ETTm1/ETTm2/exchange-rate (70%) + synthetic corpus (30%) with calendar covariates.",
+  "training_steps": 6000,
+  "batch_size": 16,
+  "context_patches": 8,
+  "horizon_patches": 2,
+  "best_val_loss": 45.120255663990974,
+  "train_minutes": 26.040025675296782,
+  "corpus": [
+    "ETTh1",
+    "ETTm1",
+    "ETTm2",
+    "exchange"
+  ],
+  "holdout": [
+    "ETTh2"
+  ],
+  "patch_len": 32,
+  "max_context_len": 2048,
+  "max_horizon_len": 256,
+  "quantiles": [
+    0.1,
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7,
+    0.8,
+    0.9
+  ],
+  "num_parameters": 5191808,
+  "onnx_opset": 18,
+  "onnx_bytes": 21342626
+}

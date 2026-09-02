@@ -316,15 +316,18 @@ gateway; quotas here are monthly.
 | `TIMESFM3_MAX_CONTEXT` | `16384` | Context steps per request |
 | `PORT` | `8000` | Listen port |
 
-### Cloudflare edge front end
+### Cloudflare edge front end (free tier, no backend)
 
-`cloudflare/` is a single Worker that serves the marketing site, proxies
-the API with the upstream key held server-side, rate-limits per IP in KV,
-caches the cheap GETs at the edge, serves the dashboard at `/app`, and
-captures signups (`POST /api/waitlist`, `GET /api/leads` with an admin
-token). Run it locally with `make edge-dev` against `timesfm3 serve`, deploy
-with `make edge-deploy` (needs `CLOUDFLARE_API_TOKEN`), or let
-`.github/workflows/cloudflare.yml` deploy on push. Details in
+`cloudflare/` is one Worker that runs the whole public product for $0: the
+landing page, the classical-model API computed in JavaScript at the edge,
+the dashboard at `/app` where the TimesFM-3 starter model runs **in the
+visitor's browser** through ONNX Runtime (a 21 MB static asset, cached after
+the first visit; forecasts, backtests and anomaly scans never upload data),
+and waitlist capture in Workers KV. Deploy it with the *Deploy to Cloudflare*
+button in the README or by importing the repository in the Cloudflare
+dashboard with root directory `cloudflare`; no API token or server is
+needed. Point `API_ORIGIN` at a self-hosted `timesfm3 serve` and the same
+Worker becomes a gateway for the full server-side API. Details in
 [cloudflare/README.md](../cloudflare/README.md).
 
 ## Operating it

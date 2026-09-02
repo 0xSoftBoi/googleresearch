@@ -1,52 +1,75 @@
-# Cloudflare edge front end
+# Cloudflare front end — free tier, zero servers
 
-One Worker, no build step: the marketing site, the API gateway, the
-dashboard, and lead capture for the TimesFM-3 Forecast Service.
+One Worker, no build step, nothing to pay for. The classical forecasters run
+**at the edge** in JavaScript inside the free plan's CPU budget; the TimesFM-3
+model runs **in the visitor's browser** through ONNX Runtime (WebAssembly)
+from a static asset; signups land in Workers KV. There is no backend to host.
 
-| Path | What happens |
+| Path | Edge-native mode (default) |
 |---|---|
-| `/` | Landing page from `public/` (Workers static assets) |
-| `/app` | The product dashboard, proxied from the upstream service |
-| `/v1/*`, `/healthz`, `/docs`, `/openapi.json` | Proxied to `API_ORIGIN`; the upstream `API_KEY` is attached server-side unless the caller brings their own; 30 req/min per IP via KV; `/v1/models`, `/v1/sample`, `/healthz` cached 60 s at the edge |
-| `POST /api/waitlist` | Stores `{email, company, plan, use_case}` in KV (honeypot field `website`), optional webhook |
-| `GET /api/leads` | Lists leads; needs `Authorization: Bearer $ADMIN_TOKEN` |
-| `GET /api/edge` | Edge configuration and colo, for smoke tests |
-| `/metrics` | Never proxied |
+| `/` | Landing page: live edge forecast, benchmark, pricing, waitlist |
+| `/app` | Dashboard — TimesFM-3 (21 MB ONNX, cached after first load) + classical models, backtests and anomaly scans, all computed locally in the browser; data never leaves the page |
+| `/docs` | API reference for this deployment |
+| `GET /healthz`, `GET /v1/models`, `GET /v1/sample` | Served by the Worker |
+| `POST /v1/forecast` | Classical models in JS: ≤32 series, ≤4096 context, ≤512 horizon, quantile bands, future timestamps |
+| `POST /v1/backtest` | Classical models: ≤4 series, ≤10 windows (the dashboard runs any size) |
+| `POST /v1/anomalies` | Classical models: ≤4 series |
+| `POST /api/waitlist`, `GET /api/leads` | Lead capture in KV (honeypot, dedupe by email); leads need `Authorization: Bearer $ADMIN_TOKEN` |
+| `/metrics` | Never exposed |
+
+Set `API_ORIGIN` to a self-hosted `timesfm3 serve` and the same Worker
+becomes a **gateway**: `/v1/*` is proxied with the upstream key attached
+server-side, bring-your-own keys pass through, cheap GETs are edge-cached.
+
+Per-IP rate limiting (30/min) uses the Workers rate-limit binding, which is
+free and makes no KV writes — the free tier's 1,000 KV writes/day are kept
+for leads.
+
+## Deploy in one click (free)
+
+**Option A — Deploy to Cloudflare button** (creates a copy of the repo under
+your GitHub account, provisions bindings, sets up Workers Builds so every push
+deploys):
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/0xSoftBoi/googleresearch/tree/main/cloudflare)
+
+**Option B — import this repo** (keeps deploying from this repo):
+Cloudflare dashboard → *Workers & Pages* → *Create* → *Import a repository* →
+pick `0xSoftBoi/googleresearch` → root directory `cloudflare` → deploy command
+`npx wrangler deploy` → *Deploy*. Then, under the Worker's *Settings →
+Variables and Secrets*, add the secret `ADMIN_TOKEN` (for `/api/leads`) and
+optionally `LEADS_WEBHOOK`. The KV namespace `timesfm3-edge`
+(`1df8ae6bdb5a41eabdd00beb32118817`) already exists in the account; the
+rate-limit binding needs no provisioning.
+
+**Option C — CLI**: `cd cloudflare && npm install && npx wrangler deploy`
+with `CLOUDFLARE_API_TOKEN` set (Workers Scripts: Edit, Workers KV Storage:
+Edit); `.github/workflows/cloudflare.yml` does the same on push when the
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets exist.
+
+The Worker lands at `timesfm3-edge.<account>.workers.dev`; attach a custom
+domain in the dashboard when you have one.
 
 ## Run locally
 
 ```bash
-timesfm3 serve --port 8000 &                                   # the upstream
 cd cloudflare && npm install
-npx wrangler dev --var API_ORIGIN:http://localhost:8000 --var ADMIN_TOKEN:dev
-open http://localhost:8787
+npx wrangler dev --port 8787 --var ADMIN_TOKEN:dev        # edge-native, no backend
+# or as a gateway for a local service:
+timesfm3 serve --port 8000 &  npx wrangler dev --port 8787 --var API_ORIGIN:http://localhost:8000
 ```
 
-## Deploy
+## How the model gets into the browser
 
-Needs a Cloudflare API token with *Workers Scripts: Edit* and *Workers KV
-Storage: Edit* (create one at dash.cloudflare.com → My Profile → API Tokens).
+`scripts/export_onnx.py timesfm3/assets/starter-small.pt cloudflare/public/models/starter-small.onnx`
+exports the checkpoint (dynamic series/time axes, horizon length as a tensor
+input, parity-checked against PyTorch to ~1e-6) plus a `.json` model card.
+`public/js/timesfm3-onnx.js` reproduces the Python forecaster's padding,
+rolling decode and quantile repair around the graph; `public/js/forecast.js`
+is the JS port of the classical baselines, empirical bands, backtest and
+anomaly scoring — `tests/test_js_parity.py` proves it reproduces the Python
+numbers.
 
-```bash
-export CLOUDFLARE_API_TOKEN=...   CLOUDFLARE_ACCOUNT_ID=...
-cd cloudflare
-npx wrangler deploy                                  # -> https://timesfm3-edge.<account>.workers.dev
-npx wrangler secret put API_KEY                      # the upstream key the edge uses for anonymous demo traffic
-npx wrangler secret put ADMIN_TOKEN                  # for /api/leads
-npx wrangler secret put LEADS_WEBHOOK                # optional Slack/Discord webhook
-```
-
-Set `API_ORIGIN` in `wrangler.jsonc` (or `npx wrangler deploy --var API_ORIGIN:https://...`)
-to wherever the Docker image runs — a Fly/Railway/EC2 box, or a Cloudflare
-Tunnel in front of an on-prem host. Give the edge a *quota-limited* upstream
-key (`TIMESFM3_API_KEYS="edge-demo:<key>:2000000"`) so public demo traffic
-can never exhaust the service; paying customers send their own key and the
-edge passes it through untouched.
-
-The GitHub Actions workflow `.github/workflows/cloudflare.yml` deploys on
-every push to `main` when the `CLOUDFLARE_API_TOKEN` and
-`CLOUDFLARE_ACCOUNT_ID` repository secrets exist.
-
-The KV namespace `timesfm3-edge` (`1df8ae6bdb5a41eabdd00beb32118817`) was
-created in the connected account for rate-limit counters and leads; keys are
-`rl:<ip>:<minute>` (120 s TTL), `lead:<created>:<hash>` and `lead-email:<email>`.
+Free-tier limits that shaped this: 10 ms CPU per request (hence the backtest
+caps and 200 bootstrap resamples at the edge), 25 MiB per static asset (the
+21 MB ONNX fits; the 334M `base` config would need R2), 1,000 KV writes/day.
