@@ -1,0 +1,15 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.egg-info
+build
+dist
+data/raw
+data/polymarket
+data/fred
+notebooks
+docs/*.png
+tests
+*.pt
+!timesfm3/assets/*.pt

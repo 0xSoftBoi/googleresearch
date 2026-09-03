@@ -1,0 +1,17 @@
+TimesFM-3 Forecast Service
+Copyright 2026 the timesfm3 contributors
+
+This product is an independent, from-scratch PyTorch implementation of the
+TimesFM-3 architecture described publicly by Google Research. It is licensed
+under the Apache License, Version 2.0 (see LICENSE).
+
+The model weights bundled in timesfm3/assets/ were trained by this project
+from public benchmark datasets and synthetic data using the code in this
+repository. They are NOT the Google-released "google/timesfm-3.0-pytorch"
+weights and do not derive from them; those weights are distributed by Google
+under the TimesFM Non-Commercial License v1.0, which forbids commercial and
+production use. The weights in this repository carry the same Apache-2.0
+license as the code and may be used commercially.
+
+"TimesFM" is a name used by Google Research for its models; this project is
+not affiliated with or endorsed by Google.

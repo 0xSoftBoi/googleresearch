@@ -59,6 +59,8 @@ class TimesFM3Forecaster:
         )
         self.model.to(self.device)
         self.model.eval()
+        #: provenance of loaded weights (empty for a freshly initialized model)
+        self.meta: dict = {}
 
     @classmethod
     def from_checkpoint(
@@ -67,11 +69,15 @@ class TimesFM3Forecaster:
         device: str | torch.device | None = None,
     ) -> "TimesFM3Forecaster":
         """Loads a checkpoint produced by ``timesfm3.train``."""
-        state = torch.load(path, map_location="cpu", weights_only=False)
+        from .checkpoint import load_checkpoint
+
+        state = load_checkpoint(path)
         config: TimesFM3Config = state["config"]
         model = TimesFM3Model(config)
         model.load_state_dict(state["model"])
-        return cls(config=config, model=model, device=device)
+        forecaster = cls(config=config, model=model, device=device)
+        forecaster.meta = state["meta"]
+        return forecaster
 
     @torch.no_grad()
     def forecast(

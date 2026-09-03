@@ -1,4 +1,53 @@
-# TimesFM-3: A Zero-Shot Foundation Model for Multivariate Forecasting
+# TimesFM-3 Forecast Service
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/0xSoftBoi/googleresearch/tree/main/cloudflare)
+
+**Self-hosted time-series forecasting with quantile bands, a REST API, a
+dashboard, and a backtest that tells you whether the model beats a random
+walk on your own data.** Built on an independent PyTorch implementation of
+Google Research's
+[TimesFM-3](https://research.google/blog/timesfm-3-a-zero-shot-foundation-model-for-multivariate-forecasting/)
+architecture, with a bundled pre-trained starter model (5.2 M parameters,
+trained on public benchmark data) so it works out of the box on CPU.
+
+```bash
+pip install "timesfm3[serve] @ git+https://github.com/0xSoftBoi/googleresearch"
+timesfm3 serve                      # dashboard http://localhost:8000  docs /docs
+```
+
+```bash
+curl -s -X POST localhost:8000/v1/forecast -H 'content-type: application/json' \
+  -d '{"targets":[{"name":"sales","values":[12,15,14,18,21,19,24,27,25,30,33,31]}],"horizon":4}'
+```
+
+```bash
+timesfm3 forecast data.csv --horizon 24 -o forecast.csv      # no server needed
+timesfm3 backtest data.csv --context 256 --horizon 24        # is the model worth it on *your* data?
+docker compose up --build                                    # same thing, containerized
+```
+
+| | |
+|---|---|
+| **Forecast** | point + 9 quantiles per series, multivariate targets, past-only and known-future covariates, missing values, timestamps out |
+| **Models** | bundled `starter-small` TimesFM-3 checkpoint, your own checkpoints, six classical baselines with empirical bands |
+| **Backtest** | walk-forward, cluster-bootstrap CI, HAC Diebold–Mariano, Holm correction — verdicts, not vibes |
+| **Anomalies** | walk-forward scoring against the model's own predictive band, `/v1/anomalies` and `timesfm3 anomalies` |
+| **Fine-tune** | `timesfm3 finetune data.csv` adapts the starter to your panel and prints a held-out, DM-tested before/after |
+| **Volatility** | HAR + RiskMetrics variance forecasts and Moreira–Muir vol-targeted sizing from daily returns |
+| **Ops** | API keys with plans and monthly quotas, usage metering, request limits, `/healthz`, Prometheus `/metrics`, OpenAPI, Docker image, CI |
+| **License** | Apache-2.0 code **and weights** — Google's own TimesFM-3 weights are non-commercial; these are self-trained (`NOTICE`) |
+| **Clients** | `timesfm3` CLI, `timesfm3.client.ForecastClient` (stdlib only) |
+| **Free edge** | Cloudflare Worker in `cloudflare/` that needs no backend: landing page, classical-model API in JS at the edge, TimesFM-3 running in the browser via ONNX Runtime, waitlist capture in KV, per-IP rate limit. Set `API_ORIGIN` and it becomes a gateway for the self-hosted service |
+
+The full product guide — API reference, configuration, deployment, model
+card, limits — is in [docs/PRODUCT.md](docs/PRODUCT.md). The competitive
+research, positioning and pricing model are in [docs/BUSINESS.md](docs/BUSINESS.md).
+
+![Dashboard](docs/dashboard.png)
+
+---
+
+# The research underneath
 
 A PyTorch implementation of the TimesFM-3 architecture described in the Google
 Research blog post
@@ -50,6 +99,26 @@ timesfm3/
   quant/backtest.py  # vol-targeted backtester: costs, HAC Sharpe t-stats
   quant/strategies.py# TSMOM (MOP 2012), Moreira-Muir overlay, forecaster-driven sizing
   train.py           # pre-training loop with held-out validation
+  checkpoint.py      # fp16 + metadata checkpoint packaging
+  tabular.py         # CSV in / CSV+JSON out with timestamps
+  cli.py             # `timesfm3` command: serve, forecast, backtest, models, pack, train
+  client.py          # dependency-free HTTP client
+  anomaly.py         # walk-forward anomaly scoring against predictive bands
+  finetune.py        # fine-tune a checkpoint on a panel, evaluate on its tail
+  serving/           # FastAPI app, model registry, API keys + metering, schemas, dashboard
+  assets/            # bundled starter checkpoint
+scripts/
+  train_starter.py        # reproduces the bundled starter model
+cloudflare/
+  src/index.js            # Hono Worker: official @x402/hono paywall, Privacy Pass, rate limit, static assets
+  src/privacy-pass.js     # Privacy Pass issuer + origin (RFC 9578) via @cloudflare/privacypass-ts, D1 nullifiers
+  src/edge-api.js         # edge-native API (classical models in JS) or gateway to a self-hosted service
+  public/index.html       # landing page with live demo, pricing, waitlist
+  public/app/index.html   # dashboard: TimesFM-3 in the browser (ONNX Runtime) + local backtests
+  public/js/forecast.js   # JS port of baselines, bands, DM/bootstrap/Holm, backtest, anomalies
+  public/js/timesfm3-onnx.js  # browser wrapper reproducing the Python forecaster around the ONNX graph
+  public/models/          # starter-small.onnx (21 MB) + model card, from scripts/export_onnx.py
+  wrangler.jsonc          # KV, D1 + rate-limit bindings; `make edge-dev`, `make edge-deploy`
 examples/
   forecast_example.py     # API demo: multivariate targets + covariates
   plot_forecast.py        # point + q10-q90 band vs ground truth
@@ -63,6 +132,9 @@ examples/
     model_signal.py       #   any forecaster -> positions (Deep Momentum Networks harness)
     pretrain_markets.py   #   pre-train TimesFM-3 on the FRED panel (temporal holdout)
 tests/
+  test_serving.py         # API contract, auth, limits, backtest, volatility
+  test_registry.py        # model registry and empirical quantile bands
+  test_cli.py, test_client.py, test_tabular.py, test_checkpoint.py
   test_polymarket.py      # archive-loader unit tests (pytest)
   test_baselines.py       # known-answer tests for the classical baselines
   test_evaluation.py      # known-answer tests for the comparison statistics
@@ -70,10 +142,10 @@ tests/
   test_quant.py           # backtester timing/costs, vol models, strategies
 ```
 
-## Quick start
+## Library quick start
 
 ```bash
-pip install -e .
+pip install -e ".[serve]"
 python examples/forecast_example.py
 ```
 

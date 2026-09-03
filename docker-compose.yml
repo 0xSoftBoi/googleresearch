@@ -1,0 +1,15 @@
+services:
+  forecast:
+    build: .
+    image: timesfm3:latest
+    ports:
+      - "8000:8000"
+    environment:
+      # Uncomment to require a key on every /v1 endpoint.
+      # TIMESFM3_API_KEY: change-me
+      TIMESFM3_MAX_SERIES: "64"
+      TIMESFM3_MAX_CONTEXT: "16384"
+    volumes:
+      # Drop additional packaged checkpoints (timesfm3 pack ...) here.
+      - ./models:/models
+    restart: unless-stopped

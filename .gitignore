@@ -1,8 +1,12 @@
 __pycache__/
 *.pyc
 *.pt
+!timesfm3/assets/*.pt
 .venv/
 *.egg-info/
+build/
+dist/
 data/raw/
 data/polymarket/
 data/fred/
+.pytest_cache/

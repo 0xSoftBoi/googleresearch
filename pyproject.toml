@@ -4,20 +4,49 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "timesfm3"
-version = "0.1.0"
-description = "Independent PyTorch implementation of TimesFM-3, a zero-shot foundation model for multivariate time-series forecasting."
+dynamic = ["version"]
+description = "TimesFM-3 forecasting service: zero-shot multivariate forecasts with quantiles, a REST API, dashboard, CLI, and honest backtests against classical baselines."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
+keywords = ["time-series", "forecasting", "foundation-model", "timesfm", "quantile", "api"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "torch>=2.4",
     "numpy>=1.24",
 ]
 
 [project.optional-dependencies]
+serve = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "pydantic>=2.5"]
+x402 = ["x402[evm]>=2.21"]
 examples = ["matplotlib>=3.7"]
 polymarket = ["pyarrow>=14"]
-test = ["pytest>=7", "pyarrow>=14"]
+test = ["pytest>=7", "pyarrow>=14", "fastapi>=0.110", "uvicorn>=0.27", "pydantic>=2.5", "httpx>=0.25", "x402[evm]>=2.21"]
+
+[project.scripts]
+timesfm3 = "timesfm3.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/0xSoftBoi/googleresearch"
+Documentation = "https://github.com/0xSoftBoi/googleresearch/blob/main/docs/PRODUCT.md"
+
+[tool.setuptools.dynamic]
+version = { attr = "timesfm3.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["timesfm3*"]
+
+[tool.setuptools.package-data]
+"timesfm3.serving" = ["static/*.html", "static/*.csv"]
+"timesfm3.assets" = ["*.pt", "*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]

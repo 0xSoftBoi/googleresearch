@@ -70,20 +70,28 @@ def train(
     dataset: torch.utils.data.IterableDataset | None = None,
     val_dataset: torch.utils.data.IterableDataset | None = None,
     history: list | None = None,
+    init_state: dict | None = None,
+    verbose: bool = True,
 ) -> TimesFM3Model:
-    """Pre-trains a TimesFM-3 model; returns the final (not best) model.
+    """Pre-trains (or, with ``init_state``, fine-tunes) a TimesFM-3 model.
 
-    The best-validation checkpoint is saved to ``checkpoint_path``. When
-    ``history`` is a list, dicts of logged train/val losses are appended to
-    it for plotting.
+    Returns the final (not best) model.  The best-validation checkpoint is
+    saved to ``checkpoint_path``.  When ``history`` is a list, dicts of
+    logged train/val losses are appended to it for plotting.  ``init_state``
+    is a state dict to start from -- fine-tuning a pre-trained checkpoint
+    on a customer corpus with a small learning rate.
     """
     device = torch.device(
         device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
     )
-    model = TimesFM3Model(config).to(device)
+    model = TimesFM3Model(config)
+    if init_state is not None:
+        model.load_state_dict(init_state)
+    model = model.to(device)
     model.train()
+    log = print if verbose else (lambda *a, **k: None)
     num_params = sum(p.numel() for p in model.parameters())
-    print(f"TimesFM-3 model with {num_params / 1e6:.1f}M parameters on {device}.")
+    log(f"TimesFM-3 model with {num_params / 1e6:.1f}M parameters on {device}.")
 
     corpus = dataset or SyntheticMultivariateCorpus(
         config,
@@ -146,7 +154,7 @@ def train(
 
         running += loss.item()
         if step % log_every == 0:
-            print(f"step {step:>7d}  lr {lr:.2e}  loss {running / log_every:.4f}")
+            log(f"step {step:>7d}  lr {lr:.2e}  loss {running / log_every:.4f}")
             if history is not None:
                 history.append({"step": step, "train_loss": running / log_every})
             running = 0.0
@@ -162,11 +170,11 @@ def train(
                     checkpoint_path,
                 )
                 marker = "  (best, checkpoint saved)"
-            print(f"step {step:>7d}  val loss {val:.4f}{marker}")
+            log(f"step {step:>7d}  val loss {val:.4f}{marker}")
         if step >= steps:
             break
 
-    print(f"Best validation loss {best_val:.4f}; checkpoint at {checkpoint_path}.")
+    log(f"Best validation loss {best_val:.4f}; checkpoint at {checkpoint_path}.")
     return model
 
 

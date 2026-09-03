@@ -107,10 +107,15 @@ class RealWindowDataset(torch.utils.data.IterableDataset):
         calendar: bool = True,
         demote_prob: float = 0.2,
         seed: int | None = None,
+        tail: bool = False,
     ):
+        """``tail=True`` samples windows from the last ``1 - train_fraction``
+        of each series instead of the first ``train_fraction`` -- a held-out
+        validation stream that never overlaps the training windows."""
         super().__init__()
         if not sources:
             raise ValueError("At least one real source is required.")
+        self.tail = tail
         self.config = config
         self.sources = sources
         self.window = (context_patches + horizon_patches) * config.patch_len
@@ -127,13 +132,19 @@ class RealWindowDataset(torch.utils.data.IterableDataset):
     def _sample(self, rng: np.random.Generator) -> dict[str, torch.Tensor]:
         source = self.sources[rng.choice(len(self.sources), p=self.source_probs)]
         train_end = int(source.num_steps * self.train_fraction)
+        lo, hi = (train_end, source.num_steps) if self.tail else (0, train_end)
 
         stride = int(rng.choice(self.strides))
         span = self.window * stride
-        if span > train_end:
+        if span > hi - lo:
             stride = 1
             span = self.window
-        start = int(rng.integers(0, train_end - span + 1))
+        if span > hi - lo:
+            raise ValueError(
+                f"Source {source.name!r}: region of {hi - lo} steps is shorter than one "
+                f"window of {span} steps."
+            )
+        start = int(rng.integers(lo, hi - span + 1))
         window = source.values[:, start : start + span : stride]
 
         channels = list(rng.permutation(len(window))[: self.max_variates])
