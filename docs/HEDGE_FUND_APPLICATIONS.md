@@ -19,7 +19,7 @@ runnable from `examples/hedge_fund/` against a free, reproducible data source
 - Generic-pretrained time-series foundation models transfer poorly to
   financial returns; the same architectures **pre-trained on financial
   data** produce real gains
-  ([Rahimikia et al. 2025, Man Group-affiliated](https://arxiv.org/abs/2511.18578)).
+  ([Rahimikia, Ni & Wang 2025, Manchester / UCL](https://arxiv.org/abs/2511.18578)).
   This repo is a trainable TimesFM-3 implementation with a financial
   pre-training corpus — exactly the setup that paper argues for.
 
@@ -66,8 +66,10 @@ baseline strategy implements:
   a gross Sharpe of 1.8 for the multi-horizon version, and TSMOM largely
   explains CTA-index returns.
 - [Hurst, Ooi & Pedersen, "A Century of Evidence on Trend-Following", JPM 2017](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2993026):
-  positive in every decade 1880–2016, **~0.4 net Sharpe** at the century
-  scale — the honest long-run number after costs and crowding.
+  positive net of fees in every decade since 1880, with a full-sample
+  **net-of-fee Sharpe of 0.77** (1880–2013 version); the paper's 0.4 is a
+  stress assumption ("suppose the strategy only realizes 0.4"), not a
+  realized number.
 - [Frazzini, Israel & Moskowitz, "Trading Costs of Asset Pricing Anomalies"](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2294498):
   ~$1T of AQR's own executions show institutional costs are ~10x below
   academic estimates — which is why the cost sweep in our backtests
@@ -101,7 +103,10 @@ baseline strategy implements:
 All numbers below are from real FRED data (16 assets: 9 FX majors, NASDAQ
 and S&P 500, WTI/Brent/natural gas, 2y and 10y Treasury total-return
 proxies built from constant-maturity yields), produced by the scripts named
-in each subsection on 2026-09-01. Drawdowns are in log-return units.
+in each subsection on 2026-09-01 and re-run on 2026-09-04 (FRED data two
+trading days longer; every figure below reproduced to the printed precision
+except where noted — see `docs/VERIFICATION.md`). Drawdowns are in
+log-return units.
 
 ### 2.1 Time-series momentum (`examples/hedge_fund/trend_following.py`)
 
@@ -167,7 +172,7 @@ so the table isolates forecast quality. Net of 10 bps, 1975–2026:
 | drift (trend extrapolation) | +2.19% | **+1.25** | markets trend |
 | AR(4) (mean reversion) | −2.78% | −1.44 | ...and punish mean-reversion at this horizon |
 | EWMA (flat forecast, placebo) | −0.03% | −0.87 | harness conjures no P&L from sizing alone |
-| TimesFM-3 `tiny` (1M params, 2000 CPU steps, §2.4) | −3.39% | −1.57 | an under-trained neural forecaster loses like a mean-reverter |
+| TimesFM-3 `tiny` (1M params, 2000 CPU steps, §2.4) | −3.39% (re-run: −1.89%) | −1.57 (re-run: −1.49) | an under-trained neural forecaster loses like a mean-reverter; two independent trainings, same conclusion |
 
 The placebo row is the important one: a forecaster that predicts "no move"
 holds ~zero positions and earns ~zero — the pipeline has no hidden long
@@ -175,7 +180,7 @@ bias. Sharpe differences between rows are attributable to the forecasts.
 
 ### 2.4 The TimesFM-3 path (`examples/hedge_fund/pretrain_markets.py`)
 
-[Rahimikia et al.](https://arxiv.org/abs/2511.18578) (Man Group-affiliated)
+[Rahimikia, Ni & Wang](https://arxiv.org/abs/2511.18578) (Alliance Manchester Business School / UCL)
 find generic-pretrained foundation models underperform gradient-boosting
 baselines on daily returns, while financially-pretrained versions of the
 same architectures deliver forecasting and portfolio gains; independent
@@ -196,7 +201,8 @@ here follows the paper's recipe rather than the zero-shot shortcut:
 
 We ran this loop end-to-end and report the result even though it is
 negative: the `tiny` config (1M parameters, 2000 CPU training steps on 16
-series) earns **Sharpe −1.57** through the harness — statistically a
+series) earns **Sharpe −1.57** through the harness (−1.49 when re-trained
+from scratch on 2026-09-04 with a different torch build) — statistically a
 mean-reverter, clustering with AR(4) rather than `drift` in the §2.3
 table. That is the expected outcome at this scale, and it is the same
 shape of result Rahimikia et al. report for under-adapted foundation

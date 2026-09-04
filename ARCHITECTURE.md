@@ -78,7 +78,10 @@ best checkpoint is kept.
 ## Dimensions
 
 The base config matches the released TimesFM-3: 20 layers, model dim 1280,
-16 heads, 32-step patches, ≈334M parameters, contexts up to 16k steps.
+16 heads, 32-step patches, ≈334M parameters as counted here (Google states
+~330M). The base config here allows contexts up to 16k steps; that limit is
+documented for TimesFM 2.5 — Google's TimesFM-3 blog post and model card do
+not state a context limit.
 
 ## Known deviations from the released model
 

@@ -42,6 +42,10 @@ docker compose up --build                                    # same thing, conta
 The full product guide — API reference, configuration, deployment, model
 card, limits — is in [docs/PRODUCT.md](docs/PRODUCT.md). The competitive
 research, positioning and pricing model are in [docs/BUSINESS.md](docs/BUSINESS.md).
+Every measured number and every external citation in these documents was
+independently re-run or re-fetched on 2026-09-04; the claim-by-claim ledger,
+with the commands that reproduce each figure and the corrections that audit
+forced, is [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
 ![Dashboard](docs/dashboard.png)
 
@@ -72,7 +76,7 @@ supports:
 | Alternating attention | A 2D grid of tokens (series × time). **Temporal attention** is strictly causal within each series; **cross-variate attention** lets a token attend to every other series at the same time step | `timesfm3/attention.py`, `timesfm3/blocks.py` |
 | Decoding | **Contiguous Patch Masking**: target and past-only covariate patches are masked over the horizon while past–future covariates remain visible, and the whole horizon is produced in one forward pass. Horizons beyond the single-pass maximum roll forward chunk by chunk | `timesfm3/model.py`, `timesfm3/forecaster.py` |
 | Output | **9 quantiles (q10 … q90, median at index 4)** plus a point forecast for every target at every horizon step, with optional quantile-crossing repair | `timesfm3/model.py`, `timesfm3/forecaster.py` |
-| Scale | Base config matches the released TimesFM-3 dimensions — 20 layers, model dim 1280, 16 heads — at ~334 M parameters (`small` and `tiny` configs included for experimentation) | `timesfm3/configuration.py` |
+| Scale | Base config matches the released TimesFM-3 dimensions — 20 layers, model dim 1280, 16 heads (per Google's model card) — at ≈334 M parameters as configured here (Google states "330 million" / "0.3B"; the difference is in embedding/head details this code does not know). `small` and `tiny` configs included for experimentation | `timesfm3/configuration.py` |
 
 A detailed walkthrough of the token grid, attention layout, and known
 deviations from the released model lives in [ARCHITECTURE.md](ARCHITECTURE.md).

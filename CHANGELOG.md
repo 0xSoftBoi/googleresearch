@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased — verification pass
+
+- `docs/VERIFICATION.md`: every measured figure in the README, model card,
+  hedge-fund and Polymarket sections re-run from a clean container on
+  2026-09-04, and every external citation re-fetched; ledger of what
+  reproduced, what did not, and what was corrected.
+- Corrections: Rahimikia, Ni & Wang (2025) is a Manchester/UCL paper, not
+  "Man Group-affiliated"; Hurst–Ooi–Pedersen's century-scale *net* Sharpe is
+  0.77, the 0.4 figure was a stress assumption; Nixtla Series A and ORATS /
+  alt-data spend now cite pages that actually contain the figures; Pecan
+  pricing restated from third-party listings; BigQuery `AI.FORECAST` serves
+  TimesFM 2.5 by default; the released model's parameter count is stated by
+  Google as 330 M (≈334 M as configured here) and its 16k context is a
+  TimesFM 2.5 figure; the anomaly "two planted spikes" anecdote replaced by a
+  reproducible statement; the fine-tune gain reported as a range across runs;
+  unit economics re-measured (faster than the earlier draft claimed).
+
 ## 0.8.0 — built on Cloudflare's own primitives
 
 - Credits are now standard **Privacy Pass** tokens (RFC 9576/9577/9578,
