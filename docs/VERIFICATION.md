@@ -144,7 +144,7 @@ def lag1(x):
 
 | Claim | Verdict | Evidence |
 |---|---|---|
-| tiny config, 8000 steps: best val loss 1.405; held-out synthetic scaled MAE 0.94 vs last-value 1.26 / ctx-mean 1.18; ETTh1 zero-shot 0.90 vs 1.04 / seasonal-naive 0.70; "~25 minutes on CPU" | IN PROGRESS | No checkpoint for this run is shipped, so it is being re-trained from scratch with the README command at 8000 steps and evaluated with `examples/evaluate.py` and `examples/evaluate_ett.py`; the result is appended in §8a by the follow-up commit. |
+| tiny config, 8000 steps: best val loss 1.405; held-out synthetic scaled MAE 0.94 vs last-value 1.26 / ctx-mean 1.18; ETTh1 zero-shot 0.90 vs 1.04 / seasonal-naive 0.70; "~25 minutes on CPU" | REPRODUCED (evaluation); val loss not comparable | Re-trained from scratch with the README command (`python -m timesfm3.train --config tiny --steps 8000 --batch-size 16 --context-patches 8 --horizon-patches 2`): 7.1 min wall on 4 cores (25 min CPU time). `examples/evaluate.py`: model **0.913**, last-value 1.256, ctx-mean 1.184. `examples/evaluate_ett.py --data data/raw/ETTh1.csv`: model **0.892**, last-value 1.040, seasonal-naive 0.699. Baselines identical to the README, the model marginally better than printed. Best validation loss was 0.846, not 1.405: the README figure dates from commit `1f61195` (2026-08-31), before the loss/data code was revised, so the two are not on the same scale and the README now says so. |
 
 ---
 

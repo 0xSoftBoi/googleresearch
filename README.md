@@ -378,9 +378,11 @@ python -m timesfm3.train --config tiny --steps 600 --batch-size 16 \
 python examples/plot_forecast.py --checkpoint timesfm3_checkpoint.pt
 ```
 
-The tiny (1M parameter) config trains in ~25 minutes on CPU with held-out
-validation and best-checkpoint saving. After 8000 steps (best validation
-loss 1.405), scaled MAE against naive baselines:
+The tiny (1M parameter) config trains in ~7–25 minutes on CPU (7 min on
+4 idle cores) with held-out validation and best-checkpoint saving. After
+8000 steps, scaled MAE against naive baselines (2026-08-31 run; a from-scratch
+re-run on 2026-09-04 gave 0.91 and 0.89 for the model with identical
+baselines — see `docs/VERIFICATION.md`):
 
 | Evaluation | model | last-value | seasonal-naive | context-mean |
 |---|---|---|---|---|
