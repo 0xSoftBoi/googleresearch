@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.9.0 — a real adapter for a competitor's weights, not a claim about one
+
+- `timesfm3/serving/adapters.py`: `ChronosAdapter` runs Amazon's own
+  `chronos-forecasting` package (Chronos / Chronos-Bolt) through the
+  registry's forecaster contract; `add_chronos()` registers it, and
+  `TIMESFM3_CHRONOS_MODELS` loads one or more alongside TimesFM-3
+  checkpoints with no code changes (`timesfm3[chronos]` extra).
+- `ModelRegistry.add_forecaster` generalized to accept `kind` and
+  `supports_covariates`; `ModelEntry.forecast()` dispatch generalized from
+  `kind == "timesfm3"` to "has a forecaster", so a foreign model reports its
+  real kind on `GET /v1/models` instead of being mislabeled `timesfm3`.
+  Default-model selection generalized the same way.
+- `tests/test_adapters.py` runs a real forecast against the actual
+  Chronos-Bolt-tiny weights (skipped, not mocked, when the optional
+  dependency or network is unavailable).
+- `docs/BUSINESS.md`, `docs/PRODUCT.md`: corrected an earlier claim that the
+  registry already served "any checkpoint" from a competitor — it only
+  served this repo's own `.pt` format. That claim is now true for Chronos,
+  documented as an adapter (a few dozen lines), not a config toggle.
+
 ## 0.8.0 — built on Cloudflare's own primitives
 
 - Credits are now standard **Privacy Pass** tokens (RFC 9576/9577/9578,

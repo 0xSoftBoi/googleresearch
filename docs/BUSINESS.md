@@ -265,11 +265,17 @@ infrastructure Cloudflare and Apple already operate at scale.
   open, backed by real hedge-fund-adoption momentum). Mitigation: none of
   them sell a service — Datadog monetizes Toto through its own SaaS
   subscription, not a standalone API; Kronos is a research release with no
-  hosting, metering or billing at all; the registry in this repo serves
-  *any* checkpoint, so wrapping a Toto or Chronos-2 weight file as another
-  registry entry is a config change, not a rewrite, and turns "they have a
-  better model" into "we also serve their model, plus the parts they don't
-  sell."
+  hosting, metering or billing at all. We stopped asserting this and shipped
+  it: `timesfm3/serving/adapters.py` registers Amazon's own
+  `chronos-forecasting` pipeline through the same `.forecast()` contract
+  TimesFM-3 checkpoints use, `TIMESFM3_CHRONOS_MODELS` loads one alongside
+  the starter model with no code changes, and a test runs a real Chronos-Bolt
+  forecast end to end (skipped, not faked, when the optional dependency is
+  absent). That is one adapter of a few dozen lines, not a fork of the
+  serving stack — a Toto or Kronos adapter is the same shape of work, not
+  done yet. It turns "they have a better model" into "we also serve their
+  model, plus the metering, backtest, payments and privacy layer they
+  don't sell."
 - **Risk: x402 revenue does not materialize at ecosystem scale.** As of
   this update, real commercial x402 volume is ~$28k/day industry-wide and
   roughly half of that may be test traffic. Mitigation: §5 revises the plan
@@ -277,9 +283,10 @@ infrastructure Cloudflare and Apple already operate at scale.
   and self-hosted enterprise tier carry the financial case.
 - **Risk: Chronos-2 + AutoGluon "good enough".** Mitigation: they sell
   weights; we sell the service layer (metering, anomalies, backtest,
-  dashboard, fine-tune-and-prove-it, payments, privacy). Also: the registry
-  serves *any* checkpoint — adding a Chronos entry is a wrapper, not a
-  rewrite.
+  dashboard, fine-tune-and-prove-it, payments, privacy). Also: a Chronos
+  adapter already exists in this repo (see above) — a customer who prefers
+  Chronos-2's accuracy on their series still needs everything else here to
+  put it into production.
 - **Risk: starter model is small and no longer leads any public benchmark.**
   True, and the model card says so. The backtest endpoint turns this into a
   sales motion ("run it on your data; if `no difference`, use EWMA for free
@@ -306,5 +313,6 @@ infrastructure Cloudflare and Apple already operate at scale.
 | Google's weights are non-commercial | `LICENSE` (Apache-2.0) and `NOTICE` stating the bundled weights are self-trained and commercially usable |
 | AI agents cannot sign up for API keys | `POST`/`GET` 402 responses with x402 pricing on every priced endpoint, in both the Python service and the Cloudflare Worker |
 | Every hosted competitor logs who asked what | Privacy Pass credit pool (RFC 9576/9577/9578): tokens the operator cannot link to the purchase or to each other, interoperable between the service and the edge |
-| Open-weight competition (Toto, Chronos-2, Kronos) now leads public benchmarks | Positioning shifted from "best model" to "best-audited, best-plumbed service" (§3, claim 4); the model registry accepts any checkpoint so a competitor's weights can be served alongside ours |
+| Open-weight competition (Toto, Chronos-2, Kronos) now leads public benchmarks | Positioning shifted from "best model" to "best-audited, best-plumbed service" (§3, claim 4) |
 | x402 ecosystem volume is real but genuine commercial spend is still small | Revenue plan (§5) stopped counting on x402 volume; it is now framed explicitly as free distribution/optionality, not a forecast line |
+| The registry's "serves any checkpoint" claim only held for this repo's own `.pt` format | `timesfm3/serving/adapters.py`: `ChronosAdapter` runs Amazon's real `chronos-forecasting` pipeline through the registry's forecaster contract; `TIMESFM3_CHRONOS_MODELS` loads it with no code changes; `ModelEntry` dispatch generalized from "kind == timesfm3" to "has a forecaster" so a foreign model reports its real kind (`GET /v1/models`) instead of masquerading as TimesFM-3; `tests/test_adapters.py` runs a real forecast, not a mock |

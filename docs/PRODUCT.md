@@ -274,6 +274,28 @@ Packaged checkpoints are half precision with a provenance `meta` block; the
 server lists that metadata on `/v1/models`. Multiple checkpoints can be
 served at once (`--checkpoint` is repeatable, or set `TIMESFM3_MODEL_DIR`).
 
+### Bring someone else's checkpoint
+
+The registry's contract is two methods (`.model` for a parameter count,
+`.forecast(...)` for a `ForecastResult`) -- nothing in it is TimesFM-3
+specific. `timesfm3/serving/adapters.py` ships a real adapter for Amazon's
+open-weight Chronos / Chronos-Bolt models
+(`pip install "timesfm3[chronos]"`):
+
+```bash
+TIMESFM3_CHRONOS_MODELS=amazon/chronos-bolt-tiny timesfm3 serve
+# or alongside your own checkpoints:
+TIMESFM3_CHECKPOINTS=demand-v1=my-packed.pt TIMESFM3_CHRONOS_MODELS=amazon/chronos-bolt-small timesfm3 serve
+```
+
+`GET /v1/models` reports it with `"kind": "chronos"` and
+`"supports_covariates": false` (Chronos has no covariate mechanism; the
+adapter raises rather than silently ignoring one) so API consumers can tell
+it apart from a TimesFM-3 entry. Point `/v1/backtest` at both and let the
+Diebold-Mariano test say which one actually wins on your data. Writing an
+adapter for another vendor's model is the same shape of work --
+`ChronosAdapter` is under 60 lines.
+
 ### Classical baselines
 
 Always registered. They have no quantile head, so their bands are
@@ -407,6 +429,7 @@ on-chain Privacy Pools funding and operator notes are in
 | `TIMESFM3_PRIVACY_PASS_ISSUER_NAME` | origin name | Issuer name in challenges and the issuer directory |
 | `TIMESFM3_CHECKPOINTS` | unset | Comma-separated `[name=]path` checkpoints to serve |
 | `TIMESFM3_MODEL_DIR` | unset (`/models` in Docker) | Serve every `*.pt` in this directory |
+| `TIMESFM3_CHRONOS_MODELS` | unset | Comma-separated `[name=]model_id` Chronos checkpoints to serve alongside TimesFM-3 (needs `timesfm3[chronos]`) |
 | `TIMESFM3_DEFAULT_MODEL` | last checkpoint added, else `ewma` | Model used when a request omits `model` |
 | `TIMESFM3_NO_BUNDLED` | `0` | `1` disables the bundled starter model |
 | `TIMESFM3_MAX_SERIES` | `64` | Series per request (targets + covariates) |
