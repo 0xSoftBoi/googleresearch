@@ -90,7 +90,7 @@ def test_feature_channels_are_causal():
     b = vm.AssetRV("X", a.dates, a.returns, a.rv.copy())
     b.rv[3000:] *= 50.0          # change the future only
     b.features = vm._causal_features(b.rv)
-    for ch in vm.CHANNELS[1:]:
+    for ch in ("log_ewma94", "log_mean22"):
         np.testing.assert_allclose(a.features[ch][:3000], b.features[ch][:3000])  # past unaffected
         assert not np.allclose(a.features[ch][3000:3010], b.features[ch][3000:3010])
 
@@ -101,10 +101,36 @@ def test_multichannel_forward_and_forecaster_shapes():
     a = _asset()
     t = vm.split_origins(a, "val")[:4]
     x = vm.channel_contexts(a, t, vm.CHANNELS)
-    assert x.shape == (4, 3, vm.CONTEXT)
+    assert x.shape == (4, 4, vm.CONTEXT)
+    assert np.isnan(x[:, 3]).all()  # no implied vol for this asset
     cfg = TimesFM3Config.tiny()
     if vm.CONTEXT <= cfg.max_context_len:
         out = vm.timesfm(model, channels=vm.CHANNELS)(a, t)
         assert out.shape == (4, 2) and np.all(out > 0)
     with pytest.raises(ValueError):
         vm.channel_contexts(a, t, ("log_ewma94",))
+
+
+def test_missing_implied_vol_channel_equals_dropping_it():
+    torch.manual_seed(0)
+    model = TimesFM3Forecaster(TimesFM3Config.tiny(), device="cpu").model
+    model.eval()
+    a = _asset()
+    t = vm.split_origins(a, "val")[:3]
+    three = vm.timesfm(model, channels=vm.CHANNELS[:3])(a, t)
+    four = vm.timesfm(model, channels=vm.CHANNELS)(a, t)   # log_iv all NaN -> masked out
+    np.testing.assert_allclose(three, four, rtol=1e-5)
+
+
+def test_implied_vol_competitors():
+    a = _asset()
+    t = vm.split_origins(a, "val")[:5]
+    rm = vm.riskmetrics()(a, t)
+    np.testing.assert_allclose(vm.iv_or_riskmetrics()(a, t), rm)       # no IV -> RiskMetrics
+    np.testing.assert_allclose(vm.har_iv()(a, t), vm.har()(a, t))       # no IV -> plain HAR
+    iv = np.full(len(a.rv), 2e-4)
+    a.set_implied_var(iv)
+    np.testing.assert_allclose(vm.iv_or_riskmetrics()(a, t), 2e-4)      # IV at the origin
+    assert np.isfinite(a.features["log_iv"]).all()
+    out = vm.har_iv()(a, t)
+    assert out.shape == (5, 2) and np.all(out > 0)

@@ -55,16 +55,27 @@ class AssetRV:
     returns: np.ndarray  # daily log returns on those days
     rv: np.ndarray       # squared returns (floored), the daily variance proxy
     features: dict = dataclasses.field(default_factory=dict)
+    implied_var: np.ndarray | None = None  # daily implied variance on `dates`, NaN if none
 
     def __post_init__(self) -> None:
         if not self.features:
             self.features = _causal_features(self.rv)
+        if "log_iv" not in self.features:
+            self.set_implied_var(self.implied_var)
+
+    def set_implied_var(self, iv: np.ndarray | None) -> None:
+        n = len(self.rv)
+        self.implied_var = np.full(n, np.nan) if iv is None else np.asarray(iv, dtype=np.float64)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            self.features["log_iv"] = np.where(self.implied_var > 0, np.log(self.implied_var), np.nan)
 
 
 #: Input channels a candidate may use. ``log_rv`` is the target channel; the
-#: rest are causal smoothings of the same squared returns (value at day i uses
-#: days <= i only), fed as past-only covariates.
-CHANNELS = ("log_rv", "log_ewma94", "log_mean22")
+#: rest are past-only covariates: causal smoothings of the same squared
+#: returns (value at day i uses days <= i only) and, where the asset has a
+#: CBOE index, log implied daily variance at the day's close (NaN elsewhere;
+#: the model sees it as unobserved).
+CHANNELS = ("log_rv", "log_ewma94", "log_mean22", "log_iv")
 
 
 def _causal_features(rv: np.ndarray) -> dict[str, np.ndarray]:
@@ -169,18 +180,85 @@ def har(log_space: bool = False) -> Forecaster:
     return fc
 
 
+def iv_or_riskmetrics() -> Forecaster:
+    """Implied daily variance at the origin where the asset has one, else RiskMetrics."""
+    rm = riskmetrics()
+
+    def fc(asset: AssetRV, t: np.ndarray) -> np.ndarray:
+        out = rm(asset, t)
+        iv = asset.implied_var[t]
+        ok = np.isfinite(iv) & (iv > 0)
+        out[ok] = iv[ok, None]
+        return out
+    return fc
+
+
+def har_iv(min_coverage: float = 0.9) -> Forecaster:
+    """HAR-RV plus implied variance (Busch-Christensen-Nielsen style), OLS per context.
+
+    Regresses next-day variance on the daily / weekly / monthly RV averages
+    and the previous close's implied variance, in winsorized levels like
+    :class:`HAR`. Iterated with implied variance held at its last value.
+    Falls back to plain HAR when implied variance covers less than
+    ``min_coverage`` of the context or is missing at the origin.
+    """
+    plain = HAR()
+
+    def one(rv: np.ndarray, iv: np.ndarray) -> np.ndarray:
+        if not np.isfinite(iv[-1]) or np.isfinite(iv).mean() < min_coverage:
+            return plain.forecast(rv, EVAL_HORIZON)
+        cap = np.quantile(rv, 0.99)
+        y_all = np.clip(rv, None, cap)
+        ivf = iv.copy()
+        last = np.nan
+        for i in range(len(ivf)):  # forward-fill gaps inside the window (causal)
+            if np.isfinite(ivf[i]):
+                last = ivf[i]
+            else:
+                ivf[i] = last
+        m = 22
+        rows = []
+        for t in range(m, len(rv)):
+            rows.append([1.0, y_all[t - 1], y_all[t - 5:t].mean(), y_all[t - m:t].mean(), ivf[t - 1]])
+        x = np.asarray(rows)
+        y = y_all[m:]
+        ok = np.all(np.isfinite(x), axis=1)
+        if ok.sum() < 60:
+            return plain.forecast(rv, EVAL_HORIZON)
+        x, y = x[ok], y[ok]
+        beta = np.linalg.solve(x.T @ x + 1e-8 * np.eye(5), x.T @ y)
+        hist = list(y_all[-m:])
+        out = np.empty(EVAL_HORIZON)
+        for k in range(EVAL_HORIZON):
+            arr = np.asarray(hist[-m:])
+            out[k] = beta @ np.array([1.0, arr[-1], arr[-5:].mean(), arr.mean(), ivf[-1]])
+            hist.append(out[k])
+        lo = max(float(np.quantile(rv, 0.05)), 0.1 * float(rv[-m:].mean()))
+        return np.clip(out, lo, float(rv.max() * 10.0))
+
+    def fc(asset: AssetRV, t: np.ndarray) -> np.ndarray:
+        ctx = contexts(asset, t)
+        ivw = np.lib.stride_tricks.sliding_window_view(asset.implied_var, CONTEXT)[t - CONTEXT + 1]
+        return _to_horizons(np.stack([one(c, w) for c, w in zip(ctx, ivw)]))
+    return fc
+
+
 def _patch_batch(x_log: np.ndarray, horizon_patches: int, patch_len: int):
+    """Model tensors; NaN inputs are unobserved, all-NaN channels are masked out."""
     if x_log.ndim == 2:
         x_log = x_log[:, None, :]
     b, c, length = x_log.shape
     total = length + horizon_patches * patch_len
+    finite = np.isfinite(x_log)
     values = torch.zeros((b, c, total), dtype=torch.float32)
-    values[:, :, :length] = torch.as_tensor(x_log, dtype=torch.float32)
+    values[:, :, :length] = torch.as_tensor(np.where(finite, x_log, 0.0), dtype=torch.float32)
     observed = torch.zeros((b, c, total), dtype=torch.bool)
-    observed[:, :, :length] = True
+    observed[:, :, :length] = torch.as_tensor(finite)
     roles = torch.full((b, c), ROLE_PAST_COVARIATE, dtype=torch.int64)
     roles[:, 0] = ROLE_TARGET
-    return values, observed, roles
+    variate_mask = torch.as_tensor(finite.any(axis=-1))
+    variate_mask[:, 0] = True
+    return values, observed, roles, variate_mask
 
 
 def timesfm_log_forward(model: TimesFM3Model, x_log: np.ndarray, horizon_patches: int = 1):
@@ -196,9 +274,10 @@ def timesfm_log_forward(model: TimesFM3Model, x_log: np.ndarray, horizon_patches
     if length % cfg.patch_len or length > cfg.max_context_len:
         raise ValueError(f"context {length} must be a multiple of {cfg.patch_len} "
                          f"and at most {cfg.max_context_len}")
-    values, observed, roles = _patch_batch(x_log, horizon_patches, cfg.patch_len)
+    values, observed, roles, variate_mask = _patch_batch(x_log, horizon_patches, cfg.patch_len)
     out = model(values=values, observed=observed, roles=roles,
-                num_horizon_patches=horizon_patches)
+                num_horizon_patches=horizon_patches,
+                variate_mask=None if bool(variate_mask.all()) else variate_mask)
     return out, length
 
 

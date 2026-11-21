@@ -382,6 +382,58 @@ differentiable and was optimized directly. The 2020–2026 period is now used;
 any further model must be judged on data it has not been tuned against
 (new assets, or a forward window starting after 2026-11-19).
 
+## 14. Pre-registration, attempt 2: more data, implied vol, an asset holdout (written before training)
+
+Attempt 1 (§11–13) tied RiskMetrics and was not released. Its 2020–2026
+test is spent for those 16 assets. Attempt 2 adds data and is judged only on
+assets that take no part in training, validation or selection.
+
+**More data.** FRED, loaded as three panels so calendars do not mix (code:
+`examples/hedge_fund/train_vol_model_v2.py`, `timesfm3.data.markets`):
+the original 16; `EXTRA_UNIVERSE` (Nasdaq-100, Dow, 12 more currencies,
+1/5/30-year Treasuries); `CRYPTO_UNIVERSE` (Coinbase BTC/ETH/LTC, seven-day
+calendar). HKD is excluded (hard peg). New information: CBOE implied
+volatility (FRED closes) → daily implied variance (IV/100)²/252 on the same
+day only: SP500←VIX, NASDAQ and NASDAQ100←VXN, DJIA←VXD, WTI and BRENT←OVX,
+EURUSD←EVZ. Fed as a fourth input channel `log_iv`, unobserved where missing
+and masked out entirely when a window has none
+(`tests/test_volmodel.py::test_missing_implied_vol_channel_equals_dropping_it`).
+
+**Asset split (fixed now).**
+- Training/validation (24): the original 16 + MXN, INR, CNY, TWD, THB, MYR,
+  UST1Y, UST30Y. Train windows: targets before 2015 (210,502 origins, +51%
+  vs attempt 1); validation 2015–2019 (29,687).
+- **Holdout (11), test only:** NASDAQ100 and DJIA (each with an implied-vol
+  index), KRW, BRL, ZAR, SGD, DKK, UST5Y, BTC, ETH, LTC. Test origins
+  2020-01-02 onward: 21,410 forecasts.
+
+Caveat stated up front: the test period is the one attempt 1 used for other
+assets, some correlated with these (NASDAQ100 with NASDAQ). Nothing was tuned
+on it, but this is weaker evidence than a fresh period; the strongest
+remaining check is a forward test on data after 2026-11-20.
+
+**Competitors (10, fixed now).** RiskMetrics, HAR, HAR-log, **HAR-IV** (HAR
+plus the previous close's implied variance; plain HAR where implied vol is
+missing), **iv-or-riskmetrics** (implied variance where available, else
+RiskMetrics), zero-shot starter-small, Chronos-Bolt tiny and small,
+Chronos-2, and the attempt-1 model `timesfm3-vol-v1` (§12 #6, sha256
+`cf0be395…6862`). The two implied-vol baselines are here so any gain from
+VIX-type data is not credited to the model when a regression with the same
+input achieves it.
+
+**Candidate.** Fine-tuned (from starter-small or from the attempt-1 model)
+on training-asset windows only; at most four configurations, all logged;
+exactly one chosen by calibrated validation five-day QLIKE on the training
+assets, its sha256 committed before the test.
+
+**Unchanged from §11:** variance proxy, 512-day context, horizons,
+symmetric validation-fitted calibration (fitted on the training assets'
+validation forecasts), per-date cross-asset QLIKE, HAC DM with Holm.
+
+**Gate.** Released as a differentiated model only if its five-day QLIKE on
+the holdout is significantly lower (Holm p < 0.05) than **every one** of the
+ten competitors. Otherwise not released, and the result is published here.
+
 ---
 
 ## How to re-run this audit
