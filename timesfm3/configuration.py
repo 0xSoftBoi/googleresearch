@@ -33,7 +33,9 @@ class TimesFM3Config:
             percentile, alongside a point (mean) forecast.
         max_context_patches: Maximum number of context patches the
             forecaster feeds the model (older history is cropped). The
-            released TimesFM-3 supports contexts up to 16k time steps.
+            TimesFM 2.5 documents a 16k-step context; Google's TimesFM-3
+            blog post and model card do not state a limit, so 16k is this
+            implementation's choice, not a verified released-model figure.
         max_horizon_patches: Maximum number of contiguous masked patches the
             model decodes in a single forward pass. The high-level
             forecaster extends beyond this by rolling the decode forward.

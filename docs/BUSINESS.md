@@ -51,15 +51,16 @@ metering, payments, an honest backtest, a quant toolkit) is still rare.
 | **Kronos** (finance-native foundation model) | Open weights, up to 102M params, pretrained on 12B+ K-line (OHLCV) records from 45 exchanges; purpose-built tokenizer for candlestick sequences | Free weights (research release) | Open, no hosted product | Finance-only and price-native (candlesticks), not a general multivariate forecaster — no covariates, no arbitrary series, no volatility-targeting backtest harness. Validates that quant desks want a domain model, but it is a research artifact, not `timesfm3 finetune` + `/v1/volatility` + Diebold–Mariano-tested backtest in one CLI |
 | **IBM Granite TTM** | Tiny (1–5M) Apache-2.0 models, watsonx | Free weights; watsonx pricing | Open | Same: weights, not a service |
 | **Salesforce Moirai 2.0** | Research-only open weights; proprietary version internal | n/a | Research-only license | Not usable commercially |
-| **Demand-forecasting SaaS** (Pecan, Ikigai, Anodot, inventory tools) | Vertical apps for supply chain / ecommerce | **$0.50–$5 per SKU/month**; Pecan $760–$1,400/month; market $250–$28,000/month, 4-week to 6-month setup | Application lock-in | Long setup, no API-first path, no model transparency |
-| **Quant data vendors** (ORATS, ExtractAlpha, Databento) | Signals and data, not forecasting infrastructure | ORATS from ~$100/month; large funds spend $15–60M/yr on alt data | Data, not models | Funds want to run models on their own data in their own perimeter |
+| **Demand-forecasting SaaS** (Pecan, Ikigai, Anodot, inventory tools) | Vertical apps for supply chain / ecommerce | **$0.50–$5 per SKU/month**; Pecan's own page shows no prices — third-party listings (Capterra, GetApp) show $950–$1,750/month; market $250–$28,000/month, 4-week to 6-month setup | Application lock-in | Long setup, no API-first path, no model transparency |
+| **Quant data vendors** (ORATS, ExtractAlpha, Databento) | Signals and data, not forecasting infrastructure | ORATS from $99/month; large multi-strategy funds average ~$5M/yr on alternative data (Hedgeweek) | Data, not models | Funds want to run models on their own data in their own perimeter |
 | **Micro-APIs** (ForecastAPI etc.) | Simple hosted forecast calls | 200 free/month, then $0.0016–$0.0033 per call | None | Establishes that self-serve usage pricing at fractions of a cent per forecast is accepted |
 
 Sources: [Nixtla plans](https://www.nixtla.io/docs/introduction/timegpt_subscription_plans),
 [Nixtla pricing (SoftwareAdvice)](https://www.softwareadvice.com/product/527675-TimeGPT/),
-[Nixtla Series A](https://finance.yahoo.com/news/nixtla-raises-16-million-series-130000359.html),
+[Nixtla Series A](https://www.accessnewswire.com/newsroom/en/computers-technology-and-internet/nixtla-raises-16-million-series-a-to-advance-time-series-intellig-1133806),
 [TimeGPT 2.1 announcement](https://www.nixtla.io/blog/timegpt-2-1-announcement),
 [TimeGPT 2.1 waitlist](https://www.nixtla.io/timegpt-2-waitlist),
+[TimeGPT features](https://www.nixtla.io/docs/introduction/about_timegpt),
 [Vertex AI pricing](https://cloud.google.com/vertex-ai/pricing),
 [Amazon Forecast closure](https://www.signisys.com/blog/amazon-forecast-the-complete-guide-to-aws-time-series-forecasting/),
 [Amazon SageMaker Canvas migration](https://aws.amazon.com/blogs/machine-learning/transition-your-amazon-forecast-usage-to-amazon-sagemaker-canvas/),
@@ -75,9 +76,10 @@ Sources: [Nixtla plans](https://www.nixtla.io/docs/introduction/timegpt_subscrip
 [Granite TTM](https://huggingface.co/ibm-granite/granite-timeseries-ttm-r2/blob/main/README.md),
 [Moirai 2.0](https://huggingface.co/Salesforce/moirai-2.0-R-small),
 [demand-forecasting pricing](https://setupbots.com/blog/ai-demand-forecasting-pricing-guide),
-[Pecan pricing](https://www.pecan.ai/pricing/),
+[Pecan pricing](https://www.pecan.ai/pricing/) (no list prices; see [Capterra](https://www.capterra.com/p/199700/Pecan/)),
 [market cost range](https://shivlab.com/blog/demand-forecasting-software-cost-setup-use-cases/),
-[ORATS / alt-data spend](https://permutable.ai/best-financial-market-data-providers-for-hedge-funds/),
+[ORATS pricing](https://orats.com/data-api),
+[alt-data spend (Hedgeweek)](https://www.hedgeweek.com/hedge-fund-alt-data-spending-set-to-surge-says-new-research/),
 [ForecastAPI](https://forecastapi.com/).
 
 **What every serious competitor bundles** (and this product now has):
@@ -174,11 +176,13 @@ understand from Vertex ("predictions"). One hourly series forecast 48 h
 ahead every hour is ~35k points/month; 500 SKUs forecast daily 30 days out
 is ~450k. The Starter tier covers a real deployment; Team covers a fleet.
 
-**Unit economics (measured on this box, 4 vCPU, no GPU).** The starter
-model serves ~55 ms per request for 7 series × 48 steps ≈ 6,000 points/s
-single-threaded. At cloud-CPU prices (~$0.04/vCPU-hour) that is roughly
-**$0.002 per 1,000 points** of compute — a 10× gross margin at the overage
-price, before batching. Classical models are ~100× cheaper still.
+**Unit economics (measured 2026-09-04 on a 4 vCPU box, no GPU).** The
+starter model answers a 7 series × 48 step forecast in ~15 ms HTTP round
+trip in-process (~11 ms model time), ≈ 23,000 points/s on one worker. At
+cloud-CPU prices (~$0.04/vCPU-hour) that is under **$0.001 per 1,000
+points** of compute — a >20× gross margin at the overage price, before
+batching. (The 2026-09-01 draft quoted ~55 ms / 6,000 points/s; the
+conclusion is unchanged in either case.) Classical models are cheaper still.
 
 ### The agent channel: x402 — real, but still small, and that changes the plan
 
