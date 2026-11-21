@@ -288,6 +288,14 @@ library doing the cryptography at the edge.
   it is not: a reason for a risk desk to pay, since a 1994 EWMA ties it.
   On daily closes, the next gain likely needs better data (intraday
   realized variance), which is a data-cost decision, not a training one.
+- **Tried: more data (ledger §14–16).** 51% more training windows, eight
+  more assets and CBOE implied vol as an input did not improve validation,
+  and a pre-registered test on 11 never-seen assets (crypto, EM FX,
+  Nasdaq-100, Dow) found our model with the lowest five-day loss of all
+  eleven forecasters — 3.4% below RiskMetrics, 1% below HAR — but not
+  significantly, so it was not released. It beats every Chronos model by
+  42% to 3.3× on those assets. Free daily data looks exhausted as a lever;
+  the remaining one is intraday data.
 - **Risk: open weights commoditize further.** Toto 2.0 (Apache-2.0, up to
   2.5B parameters, top spots on Datadog's reported benchmarks) and Kronos
   join Chronos and Granite. Mitigation: none of them ship a service. Toto and
@@ -325,3 +333,4 @@ library doing the cryptography at the edge.
 | The Chronos adapter crashed on Chronos-2 (list-shaped outputs) — it had only been tested on Bolt | Adapter normalizes both output conventions; an offline stub test pins both shapes and runs without the optional dependency |
 | "Classical models are cheaper still" did not hold for the served path | Unit economics re-measured per model; the sentence corrected (§5) |
 | Zero-shot foundation models are poor at volatility; a QLIKE fine-tune of ours ties RiskMetrics and beats HAR and all Chronos models (ledger §13) | Harness and fine-tuning code shipped (`timesfm3/quant/volmodel.py`); the model is not released because it does not beat RiskMetrics, per the pre-registered gate |
+| More daily data and implied vol did not move the model past classical forecasters on unseen assets (ledger §16) | Extended FRED universes and implied-vol input shipped in the harness; model still not released; the next lever is intraday data, a cost decision |

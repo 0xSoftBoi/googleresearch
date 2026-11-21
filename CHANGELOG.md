@@ -2,6 +2,18 @@
 
 ## 0.9.0 — measured against the competition, research re-verified
 
+### Volatility attempt 2: more data (pre-registered; gate failed, not released)
+
+- `timesfm3.data.markets`: `EXTRA_UNIVERSE` (Nasdaq-100, Dow, 12 currencies,
+  1/5/30-year Treasuries), `CRYPTO_UNIVERSE` (separate calendar), CBOE
+  implied-vol mapping. `timesfm3/quant/volmodel.py`: implied-variance input
+  channel (masked when absent), HAR-IV and iv-or-riskmetrics competitors,
+  implied-vol window oversampling. `examples/hedge_fund/train_vol_model_v2.py`.
+- `docs/VERIFICATION.md` §14–16: four configurations never beat the
+  attempt-1 weights on validation; on 11 never-seen assets the model has the
+  lowest five-day QLIKE of eleven (3.4% below RiskMetrics, 1% below HAR) but
+  not significantly, so not released. Results: `results/vol_test_v2.json`.
+
 ### Volatility specialization (pre-registered; gate failed, not released)
 
 - `timesfm3/quant/volmodel.py`, `examples/hedge_fund/train_vol_model.py`:

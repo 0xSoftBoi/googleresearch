@@ -471,6 +471,59 @@ variance at inference without having been trained to use it. sha256
 competitor) is expected to fail on that comparison; the test is run anyway,
 once, as pre-registered, for the out-of-asset evidence.
 
+## 16. Attempt 2 test result: gate FAILED (run once, 2026-11-21)
+
+`python examples/hedge_fund/train_vol_model_v2.py test --candidate data/vol/v2b.pt`
+(sha256 `61b2b984…7a4b`, as locked in §15). Holdout: 11 assets never used
+for training, validation or selection; 2020-01-01 .. 2026-11-15 (2,511
+dates, crypto trades every day), 21,410 forecasts. Full output:
+[`results/vol_test_v2.json`](../results/vol_test_v2.json).
+
+Five-day QLIKE, per-date average across holdout assets; ratio = competitor /
+candidate; HAC DM, Holm across ten:
+
+| competitor | QLIKE | ratio [95% CI] | raw p | Holm p | verdict |
+|---|---|---|---|---|---|
+| **candidate (attempt-1 weights + implied-vol channel)** | **0.4806** | — | | | lowest of all |
+| timesfm3-vol-v1 | 0.4819 | 1.003 [1.001, 1.004] | 0.018 | 0.087 | no difference |
+| har | 0.4853 | 1.010 [0.990, 1.030] | 0.53 | 0.53 | no difference |
+| har-iv | 0.4925 | 1.025 [1.000, 1.051] | 0.20 | 0.39 | no difference |
+| riskmetrics | 0.4969 | 1.034 [1.012, 1.059] | 0.073 | 0.22 | no difference |
+| iv-or-riskmetrics | 0.5024 | 1.045 [1.022, 1.072] | 0.017 | 0.087 | no difference |
+| chronos-bolt-small | 0.6818 | 1.418 | | 2.4e-26 | candidate better |
+| chronos-bolt-tiny | 0.6956 | 1.447 | | 1.3e-24 | candidate better |
+| har-log | 0.9448 | 1.966 | | 9.5e-11 | candidate better |
+| chronos-2 | 1.6016 | 3.332 | | 2e-136 | candidate better |
+| starter-small (zero-shot) | 1.7519 | 3.645 | | 6e-259 | candidate better |
+
+**Gate (§14): FAILED.** Not significantly better than five competitors
+(the attempt-1 model, HAR, HAR-IV, RiskMetrics, iv-or-riskmetrics). Not
+released; weights not committed.
+
+What the test does show, on assets the model never saw (crypto, emerging-
+market FX, Nasdaq-100, Dow, a new Treasury maturity):
+
+- Our QLIKE-trained model has the lowest five-day loss of all eleven
+  models: 3.4% below RiskMetrics (bootstrap CI excludes 1; HAC DM raw
+  p 0.073, so not significant under the pre-registered test) and 1% below
+  HAR. Next-day: within ±0.7% of RiskMetrics, HAR and HAR-IV (all no
+  difference).
+- Zero-shot foundation models transfer badly to new assets: Chronos-Bolt
+  is 42–45% worse at five days and 2.4–2.7× worse next-day; Chronos-2 is
+  3.3× and 5.0× worse.
+- Implied volatility did not deliver on the holdout. On the two holdout
+  assets with an index (Nasdaq-100, Dow), HAR-IV was 12% *worse* than plain
+  HAR at five days (0.494 vs 0.440), reversing its validation advantage;
+  the candidate scored 0.433 there, best, not significant.
+
+**What attempt 2 established.** Adding 51% more training windows, eight
+assets and an implied-vol input did not improve the model on validation
+(§15), and on unseen assets the attempt-1 weights match the best classical
+forecasters without beating them significantly. Neither more daily-close
+history nor CBOE implied vol moved the frontier here; that leaves
+higher-frequency information (intraday realized variance) as the untested
+lever.
+
 ---
 
 ## How to re-run this audit
@@ -491,6 +544,8 @@ data/download_polymarket.sh 2026-08-29T02 2026-08-29T03   # ≈2.2 GB; T02 will 
 pip install -e ".[chronos]"                                # §9/§11-13: Chronos models
 python examples/hedge_fund/train_vol_model.py finetune --steps 6000 --lr 1e-4 --channels log_rv,log_ewma94,log_mean22 --step-horizon 5 --agg-weight 2 --out data/vol/ft6.pt
 python examples/hedge_fund/train_vol_model.py test --candidate data/vol/ft6.pt   # §13 (≈35 min on 4 vCPU)
+python examples/hedge_fund/train_vol_model_v2.py finetune --base data/vol/ft6.pt --steps 3000 --lr 5e-5 --out data/vol/v2b.pt
+python examples/hedge_fund/train_vol_model_v2.py test --candidate data/vol/v2b.pt  # §16 (≈60 min)
 TIMESFM3_CHRONOS_MODELS="chronos-bolt-tiny=amazon/chronos-bolt-tiny,chronos-bolt-small=amazon/chronos-bolt-small,chronos-2=amazon/chronos-2" \
   timesfm3 backtest timesfm3/serving/static/sample.csv --context 256 --horizon 24 --windows 20
 ```
