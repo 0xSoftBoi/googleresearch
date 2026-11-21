@@ -244,6 +244,61 @@ errors §6 had already fixed. Each claim was re-read at its primary source:
 | MLX port of TimesFM-3 "matching to ~1e-6"; Node.js port | UNVERIFIED → removed | Came from a search summary; no repository was read. |
 | FareedKhan-dev/timesfm-from-scratch: MIT, 70M checkpoint, no server | CITATION OK | Repository page read 2026-09-13; "within days of the license change" timing removed (not established). |
 
+## 11. Pre-registration: a volatility-specialized TimesFM-3 (written 2026-11-21, before any test-period evaluation)
+
+**Why.** §9 shows our general-purpose starter loses to Chronos-Bolt by ~22%
+on ETTh2. A release has to beat something buyers pay for, measured out of
+sample. Target: daily-variance forecasting, the problem quant and risk desks
+pay for, where the industry bar is RiskMetrics and HAR-RV under QLIKE.
+This section is committed and pushed before the test period is scored; the
+commit that adds the test results must come after it.
+
+**Data.** FRED panel from `timesfm3.data.markets.load_universe` (16 assets,
+downloaded 2026-11-21, last day 2026-11-19). Variance proxy: squared daily
+log return, `realized_variance(r, demean=False)`.
+
+**Origins and splits** (by date, per asset; code: `timesfm3/quant/volmodel.py`):
+context 512 trading days ending at origin day *t*; targets are next-day
+variance (h=1) and mean variance over days *t*+1..*t*+5 (h=5).
+
+- train: target window ends before 2015-01-01 (139,463 origins at h=5);
+- validation: origin on/after 2015-01-01, target window before 2020-01-01 (19,623);
+- test: origin on/after 2020-01-01 (28,398 forecasts, through 2026-11-12).
+
+SP500 starts in FRED on 2016-11-22, so it has no training windows and is a
+held-out asset (reported separately, not gating).
+
+**Models (the competitor family, fixed now).** RiskMetrics EWMA λ=0.94
+(`ewma_variance`); HAR-RV in levels and HAR in log space (`HAR`, fit on each
+512-day context); and zero-shot, on the same log-variance input
+(log of the context floored at its own 1st percentile; exp of the
+forecast): the bundled `starter-small`, `amazon/chronos-bolt-tiny`,
+`amazon/chronos-bolt-small`, `amazon/chronos-2`. Seven competitors.
+
+**Candidate.** `starter-small` fine-tuned on training-split windows with
+QLIKE on exp(point) per step over a 32-step patch, plus QLIKE of the five-day
+mean, plus 0.1× pinball on log variance (`finetune_qlike`). At most six
+fine-tuning configurations, each recorded in this ledger, whatever its
+result. Exactly one candidate is chosen, by calibrated validation five-day
+QLIKE, before the test is run.
+
+**Calibration (symmetric).** Every model, classical and neural, gets one
+multiplicative scale per horizon, `c = mean(target / forecast)` over the
+validation forecasts (the QLIKE-optimal scale), applied unchanged to the
+test period.
+
+**Metric and test.** QLIKE (`timesfm3.quant.qlike`), averaged across assets
+per test date. `timesfm3.evaluation.compare` with the candidate as
+reference: HAC Diebold–Mariano p-values, Holm-corrected across the seven
+comparisons, bootstrap 95% CI on the loss ratio.
+
+**Release gate (primary: h=5).** The candidate is released as a
+differentiated model only if, for **every** one of the seven competitors,
+the competitor's five-day QLIKE ratio to the candidate is above 1 with
+Holm-adjusted p < 0.05. h=1, per-asset and SP500-only results are reported
+but do not gate. If the gate fails, nothing is released as "better", and the
+result is published here anyway.
+
 ---
 
 ## How to re-run this audit
