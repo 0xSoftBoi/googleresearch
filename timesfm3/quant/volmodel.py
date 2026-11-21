@@ -398,6 +398,7 @@ def finetune_qlike(
     channels: Sequence[str] = ("log_rv",),
     step_horizon: int | None = None,
     agg_weight: float = 1.0,
+    iv_fraction: float = 0.0,
     log: Callable[[str], None] = print,
 ) -> tuple[dict, list[dict]]:
     """Fine-tunes ``model`` in place on training-split windows; returns (best_state, history).
@@ -418,6 +419,17 @@ def finetune_qlike(
             pools.append((a, t))
     if not pools:
         raise ValueError("no training windows")
+    # Windows whose context has implied variance on >= 90% of days, for
+    # oversampling (``iv_fraction`` of each batch) when that channel is used.
+    iv_pools = []
+    if iv_fraction > 0 and "log_iv" in channels:
+        for a, t in pools:
+            cov = np.lib.stride_tricks.sliding_window_view(
+                np.isfinite(a.features["log_iv"]), CONTEXT)[t - CONTEXT + 1].mean(axis=1)
+            if (cov >= 0.9).any():
+                iv_pools.append((a, t[cov >= 0.9]))
+        log(f"iv oversampling: {sum(len(t) for _, t in iv_pools)} windows from "
+            f"{[a.name for a, _ in iv_pools]} at {iv_fraction:.0%} of each batch")
     quantiles = cfg.quantiles
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 
@@ -448,7 +460,8 @@ def finetune_qlike(
             g["lr"] = lr_at(step - 1)
         ctx_rows, fut_rows, x_rows = [], [], []
         for _ in range(batch_size):
-            a, pool = pools[rng.integers(len(pools))]
+            source = iv_pools if iv_pools and rng.random() < iv_fraction else pools
+            a, pool = source[rng.integers(len(source))]
             t = int(pool[rng.integers(len(pool))])
             ctx_rows.append(a.rv[t - CONTEXT + 1:t + 1])
             fut_rows.append(a.rv[t + 1:t + 1 + horizon])

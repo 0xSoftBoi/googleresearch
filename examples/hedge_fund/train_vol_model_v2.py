@@ -108,6 +108,7 @@ def cmd_finetune(args) -> None:
         model, train, val=val, val_assets=train, steps=args.steps, batch_size=args.batch_size,
         lr=args.lr, pinball_weight=args.pinball_weight, val_every=args.val_every, seed=args.seed,
         channels=channels, step_horizon=args.step_horizon, agg_weight=args.agg_weight,
+        iv_fraction=args.iv_fraction,
     )
     scratch = args.out + ".train.pt"
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
@@ -126,6 +127,7 @@ def cmd_finetune(args) -> None:
         "corpus": f"FRED, training assets only, windows with targets before {vm.TRAIN_END}",
         "objective": f"QLIKE per step (first {args.step_horizon or 32}) + {args.agg_weight} x "
                      f"5-day QLIKE + {args.pinball_weight} x pinball on log variance",
+        "iv_fraction": args.iv_fraction,
         "finetune_steps": args.steps, "finetune_lr": args.lr, "batch_size": args.batch_size,
         "seed": args.seed, "best_val_qlike_5d_calibrated": best_val,
         "train_minutes": round((time.time() - t0) / 60, 1),
@@ -193,6 +195,8 @@ def main() -> None:
     f.add_argument("--step-horizon", type=int, default=5)
     f.add_argument("--agg-weight", type=float, default=2.0)
     f.add_argument("--val-every", type=int, default=500)
+    f.add_argument("--iv-fraction", type=float, default=0.0,
+                   help="share of each batch drawn from windows with implied vol")
     f.add_argument("--seed", type=int, default=0)
     f.add_argument("--threads", type=int, default=4)
     f.set_defaults(func=cmd_finetune)

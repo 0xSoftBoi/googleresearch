@@ -434,6 +434,43 @@ validation forecasts), per-date cross-asset QLIKE, HAC DM with Holm.
 the holdout is significantly lower (Holm p < 0.05) than **every one** of the
 ten competitors. Otherwise not released, and the result is published here.
 
+## 15. Attempt 2: training runs and candidate selection (validation only; written before the test)
+
+Four configurations, the pre-registered maximum. "Val" is calibrated
+five-day QLIKE on the 24 training assets, 2015–2019. On this view (in-sample
+calibration): HAR-IV **0.490**, HAR 0.501, the attempt-1 model 0.538,
+RiskMetrics 0.575. A per-asset breakdown shows why the bar moved:
+implied variance improves HAR by 25% on NASDAQ and 20% on SP500, and CNY's
+managed regime alone gives RiskMetrics 3.27 and the attempt-1 model 2.50
+against HAR's 1.14.
+
+| # | start from | channels | steps / lr | implied-vol oversampling | best val (step) |
+|---|---|---|---|---|---|
+| v2a | starter-small | 4 (with log_iv) | 6000 / 1e-4 | none | 0.5444 (4000) |
+| v2b | attempt-1 model | 4 | 3000 / 5e-5 | none | **0.5363 (0 — start)** |
+| v2c | attempt-1 model | 4 | 4000 / 5e-5 | 50% of each batch | 0.5363 (0 — start) |
+| v2d | attempt-1 model | 4 | 2000 / 1e-5 | 30% of each batch | 0.5363 (0 — start) |
+
+All runs used the attempt-1 objective (per-step QLIKE over 5 steps + 2×
+five-day QLIKE + 0.1 pinball), batch 32. Implied-vol windows (≥90% coverage)
+come from only four training assets (EURUSD, NASDAQ, WTI, BRENT; 7,255
+windows).
+
+**Finding: more data did not produce a better model.** No warm-started run
+ever improved on its starting weights on validation (v2b, v2c and v2d saved
+weights bit-identical to the attempt-1 model), and training from the
+starter on the expanded data (v2a) did not reach them. Validation losses
+are dominated by a few assets (CNY above all), which makes the selection
+signal noisy, but no run moved it in the right direction.
+
+**Selected candidate: v2b** (best validation, ties broken by order): the
+attempt-1 weights used with the fourth input channel, so it sees implied
+variance at inference without having been trained to use it. sha256
+`61b2b9844db7bbebf7862ee1e6a9c53c179bb3b669bceb559405f6595ac27a4b` (10,402,152 bytes). Because it is nearly the same model as the
+`timesfm3-vol-v1` competitor, the gate (significantly better than every
+competitor) is expected to fail on that comparison; the test is run anyway,
+once, as pre-registered, for the out-of-asset evidence.
+
 ---
 
 ## How to re-run this audit
