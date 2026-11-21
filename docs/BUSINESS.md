@@ -277,6 +277,17 @@ library doing the cryptography at the edge.
   tested; the decision is what to *default* to (recommendation in §6, item
   4). Selling the starter as the headline model would contradict our own
   backtest.
+- **Tried: specializing our model for volatility (ledger §11–13).** A
+  pre-registered fine-tune of the starter on QLIKE, with causal smoothed-
+  variance covariates, went from 2.7× worse than RiskMetrics to a
+  statistical tie on 2020–2026 five-day QLIKE (0.988×, p 0.53), and beat
+  HAR by 7.9% and every Chronos model by 29–41%. The pre-registered gate
+  required beating RiskMetrics too, so it was not released. What it is
+  good for: honest content ("zero-shot foundation models are bad at
+  volatility; here is what fine-tuning buys, with the losing row"). What
+  it is not: a reason for a risk desk to pay, since a 1994 EWMA ties it.
+  On daily closes, the next gain likely needs better data (intraday
+  realized variance), which is a data-cost decision, not a training one.
 - **Risk: open weights commoditize further.** Toto 2.0 (Apache-2.0, up to
   2.5B parameters, top spots on Datadog's reported benchmarks) and Kronos
   join Chronos and Granite. Mitigation: none of them ship a service. Toto and
@@ -313,3 +324,4 @@ library doing the cryptography at the edge.
 | Chronos-Bolt-tiny beats our starter by 22% MAE on the model-card panel (ledger §9) | Positioning leads with model-agnostic serving; GTM item 1 publishes the losing table; bundled-model roadmap reopened as a founder decision |
 | The Chronos adapter crashed on Chronos-2 (list-shaped outputs) — it had only been tested on Bolt | Adapter normalizes both output conventions; an offline stub test pins both shapes and runs without the optional dependency |
 | "Classical models are cheaper still" did not hold for the served path | Unit economics re-measured per model; the sentence corrected (§5) |
+| Zero-shot foundation models are poor at volatility; a QLIKE fine-tune of ours ties RiskMetrics and beats HAR and all Chronos models (ledger §13) | Harness and fine-tuning code shipped (`timesfm3/quant/volmodel.py`); the model is not released because it does not beat RiskMetrics, per the pre-registered gate |

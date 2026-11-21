@@ -10,3 +10,5 @@ data/raw/
 data/polymarket/
 data/fred/
 .pytest_cache/
+# fine-tuning runs (not released; see docs/VERIFICATION.md section 13)
+data/vol/

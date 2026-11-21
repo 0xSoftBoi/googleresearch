@@ -331,6 +331,57 @@ but is still 0.75% behind RiskMetrics, so the gate (significantly better
 than all seven competitors) is expected to be hard to pass. The test below
 is run once, with this file.
 
+## 13. Test result: gate FAILED (run once, 2026-11-21)
+
+`python examples/hedge_fund/train_vol_model.py test --candidate data/vol/ft6.pt`
+(candidate sha256 `cf0be395…6862`, as locked in §12). Test period
+2020-01-02 .. 2026-11-12: 1,775 dates, 28,398 forecasts, 16 assets.
+Full output: [`results/vol_test.json`](../results/vol_test.json).
+
+Five-day QLIKE, averaged across assets per date; ratio = competitor /
+candidate (> 1 means the candidate is better); HAC DM, Holm across seven:
+
+| competitor | QLIKE | ratio [95% CI] | Holm p | candidate wins | verdict |
+|---|---|---|---|---|---|
+| **timesfm3-vol-small (candidate)** | **0.5002** | — | — | — | — |
+| riskmetrics | 0.4944 | 0.988 [0.969, 1.006] | 0.53 | 45.8% | **no difference** |
+| har | 0.5396 | 1.079 [1.052, 1.106] | 0.021 | 58.8% | candidate better |
+| chronos-bolt-small | 0.6470 | 1.293 [1.256, 1.334] | 1.5e-9 | 75.2% | candidate better |
+| chronos-bolt-tiny | 0.6544 | 1.308 [1.265, 1.353] | 6.9e-11 | 77.9% | candidate better |
+| chronos-2 | 0.7068 | 1.413 [1.331, 1.515] | 1.5e-8 | 82.2% | candidate better |
+| har-log | 0.7193 | 1.438 [1.346, 1.523] | 1.3e-5 | 89.9% | candidate better |
+| starter-small (zero-shot) | 1.3358 | 2.671 [2.431, 2.980] | 3.4e-36 | 94.2% | candidate better |
+
+**Gate (§11): FAILED** — the candidate is not significantly better than
+RiskMetrics (it is 1.2% worse in point estimate, not significant). Per the
+pre-registration it is **not released** as a differentiated model, and its
+weights are not committed (`data/vol/` is git-ignored).
+
+Reported, not gating:
+
+- Next-day horizon: RiskMetrics 0.995× the candidate (p 0.32, no
+  difference); the candidate beats HAR (1.027×, p 0.038), HAR-log and every
+  Chronos model (1.11–1.36×) and the starter (1.86×).
+- SP500 only (never in training): five-day ties with HAR (0.992×, p 0.86)
+  and RiskMetrics (1.037×, p 0.69); beats every Chronos model (1.23–1.24×,
+  p ≤ 0.011) and HAR-log.
+- Validation-fitted calibration scales: candidate 0.995 (already unbiased —
+  QLIKE training learns the conditional mean); zero-shot Chronos 3.7–11.6,
+  starter 20–50, HAR 1.08, RiskMetrics 1.15.
+
+**What this shows.** Zero-shot foundation models are poor variance
+forecasters on daily closes (Chronos-2 41% worse than our candidate).
+Fine-tuning a 5.2 M-parameter TimesFM-3 directly on QLIKE, with causal
+smoothed-variance covariates, takes it from 2.7× worse than RiskMetrics to
+statistical parity and significantly past HAR and every Chronos model — but
+not past RiskMetrics. With squared daily returns as the only signal, a
+λ=0.94 EWMA is close to the efficient frontier; beating it plausibly needs
+better information (intraday realized variance or high/low ranges), not a
+different optimizer. RL was considered and not used: the objective is
+differentiable and was optimized directly. The 2020–2026 period is now used;
+any further model must be judged on data it has not been tuned against
+(new assets, or a forward window starting after 2026-11-19).
+
 ---
 
 ## How to re-run this audit
@@ -348,7 +399,9 @@ python examples/hedge_fund/pretrain_markets.py 2000 && python examples/hedge_fun
 python -m timesfm3.train --config tiny --steps 8000 --batch-size 16 --context-patches 8 --horizon-patches 2 --checkpoint tiny.pt
 python examples/evaluate.py --checkpoint tiny.pt && python examples/evaluate_ett.py --checkpoint tiny.pt --data data/raw/ETTh1.csv
 data/download_polymarket.sh 2026-08-29T02 2026-08-29T03   # ≈2.2 GB; T02 will fail its checksum
-pip install -e ".[chronos]"                                # §9: Chronos through the registry
+pip install -e ".[chronos]"                                # §9/§11-13: Chronos models
+python examples/hedge_fund/train_vol_model.py finetune --steps 6000 --lr 1e-4 --channels log_rv,log_ewma94,log_mean22 --step-horizon 5 --agg-weight 2 --out data/vol/ft6.pt
+python examples/hedge_fund/train_vol_model.py test --candidate data/vol/ft6.pt   # §13 (≈35 min on 4 vCPU)
 TIMESFM3_CHRONOS_MODELS="chronos-bolt-tiny=amazon/chronos-bolt-tiny,chronos-bolt-small=amazon/chronos-bolt-small,chronos-2=amazon/chronos-2" \
   timesfm3 backtest timesfm3/serving/static/sample.csv --context 256 --horizon 24 --windows 20
 ```

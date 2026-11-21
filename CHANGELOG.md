@@ -2,6 +2,20 @@
 
 ## 0.9.0 — measured against the competition, research re-verified
 
+### Volatility specialization (pre-registered; gate failed, not released)
+
+- `timesfm3/quant/volmodel.py`, `examples/hedge_fund/train_vol_model.py`:
+  log-variance inputs with causal smoothed-variance covariates, date splits,
+  batched TimesFM-3 and Chronos forecasters, symmetric validation-fitted
+  calibration, and a QLIKE fine-tuning loop. Tests pin split boundaries,
+  feature causality, and batched-vs-forecaster equivalence.
+- `docs/VERIFICATION.md` §11–13: protocol and gate committed before the
+  test; six configurations logged; the selected model, fine-tuned from
+  starter-small, ties RiskMetrics on 2020–2026 five-day QLIKE (0.988×,
+  p 0.53) and significantly beats HAR (7.9%) and every Chronos model
+  (29–41%). The gate required beating RiskMetrics too, so it is not
+  released. Results: `results/vol_test.json`.
+
 ### Re-audit and benchmark (2026-11-21)
 
 - `docs/VERIFICATION.md` §9: Chronos-Bolt-tiny/-small and Chronos-2 served
