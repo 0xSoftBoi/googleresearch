@@ -26,11 +26,11 @@ from .registry import DEFAULT_QUANTILES, ModelEntry, ModelRegistry
 
 
 class ChronosAdapter:
-    """Wraps an Amazon Chronos / Chronos-Bolt pipeline as a registry forecaster.
+    """Wraps an Amazon Chronos / Chronos-Bolt / Chronos-2 pipeline as a registry forecaster.
 
-    Chronos is univariate and quantile-native (no covariate mechanism, unlike
-    TimesFM-3): the adapter raises rather than silently ignoring covariates
-    a caller expected it to use.
+    Works with Chronos, Chronos-Bolt and Chronos-2 checkpoints. Each target is
+    forecast univariately; the adapter raises on covariates rather than
+    silently ignoring inputs a caller expected it to use.
     """
 
     def __init__(self, model_id: str = "amazon/chronos-bolt-tiny", device: str = "cpu"):
@@ -55,19 +55,25 @@ class ChronosAdapter:
     ) -> ForecastResult:
         if len(past_covariates) or len(future_covariates):
             raise ValueError(
-                f"{self.model_id} is univariate: Chronos has no covariate "
-                "mechanism (unlike the TimesFM-3 entries in this registry)."
+                f"{self.model_id}: this adapter forecasts each target univariately "
+                "and does not pass covariates (Chronos-Bolt has no covariate input; "
+                "Chronos-2 does, but it is not wired up here)."
             )
         import torch
 
         inputs = [torch.as_tensor(np.asarray(t, dtype=np.float32)) for t in targets]
+        levels = list(DEFAULT_QUANTILES)
         quantiles, mean = self.pipeline.predict_quantiles(
-            inputs=inputs, prediction_length=horizon,
-            quantile_levels=list(DEFAULT_QUANTILES),
+            inputs=inputs, prediction_length=horizon, quantile_levels=levels,
         )
+        # Chronos/Chronos-Bolt return stacked (C, H, Q) / (C, H) tensors;
+        # Chronos-2 returns one (variates, H, Q) / (variates, H) tensor per input.
+        if isinstance(quantiles, (list, tuple)):
+            quantiles = torch.cat([q.reshape(-1, horizon, len(levels)) for q in quantiles])
+            mean = torch.cat([m.reshape(-1, horizon) for m in mean])
         return ForecastResult(
-            point=mean.numpy().astype(np.float64),
-            quantiles=quantiles.numpy().astype(np.float64),
+            point=mean.float().numpy().astype(np.float64),
+            quantiles=quantiles.float().numpy().astype(np.float64),
             quantile_levels=DEFAULT_QUANTILES,
         )
 

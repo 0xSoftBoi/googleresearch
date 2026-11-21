@@ -1,6 +1,33 @@
 # Changelog
 
-## 0.9.0 — a real adapter for a competitor's weights, not a claim about one
+## 0.9.0 — measured against the competition, research re-verified
+
+### Re-audit and benchmark (2026-11-21)
+
+- `docs/VERIFICATION.md` §9: Chronos-Bolt-tiny/-small and Chronos-2 served
+  through the registry and backtested with the model-card command. All three
+  beat the bundled starter (Bolt-tiny MAE ratio 0.783 [0.738, 0.845], Holm
+  p < 0.001); the starter row reproduces the model card exactly. Leakage
+  caveat recorded; per-model CPU latency measured.
+- `ChronosAdapter` crashed on Chronos-2 (list-shaped `predict_quantiles`
+  output; only Bolt had been tested). Fixed; an offline stub test pins both
+  output conventions and runs without `chronos-forecasting` installed. The
+  adapter's covariate error no longer claims Chronos has no covariate input.
+- `docs/VERIFICATION.md` §10: every claim the 2026-09-13 BUSINESS.md draft
+  added was re-read at its source. Removed as unsupported: the x402
+  "$50M / 165M transactions / 69,000 agents" and "Solana 35M" figures,
+  Toto "~70% private telemetry", Kronos "102M", the MLX/Node ports, the AP2
+  paragraph. Reworded: Toto's benchmark position (now quoted from Datadog),
+  TimeGPT 2.1 status, the x402 "$7B" figure (a token-category market cap),
+  AIMA percentages and date.
+- `docs/BUSINESS.md`: TimesFM 3.0 is now in BigQuery `AI.FORECAST` (Preview)
+  and Google permits commercial use there, so §1/§3 no longer claim there is
+  no commercial TimesFM-3; positioning leads with model-agnostic, measured
+  serving; "classical models are cheaper still" corrected (they are slower
+  as served). The landing-page FAQ no longer says the registry serves Toto,
+  Granite or Kronos checkpoints.
+
+### Chronos adapter
 
 - `timesfm3/serving/adapters.py`: `ChronosAdapter` runs Amazon's own
   `chronos-forecasting` package (Chronos / Chronos-Bolt) through the
@@ -20,7 +47,7 @@
   served this repo's own `.pt` format. That claim is now true for Chronos,
   documented as an adapter (a few dozen lines), not a config toggle.
 
-## Unreleased — verification pass
+### Verification pass (2026-09-04 audit, merged into this release)
 
 - `docs/VERIFICATION.md`: every measured figure in the README, model card,
   hedge-fund and Polymarket sections re-run from a clean container on

@@ -286,7 +286,7 @@ served at once (`--checkpoint` is repeatable, or set `TIMESFM3_MODEL_DIR`).
 The registry's contract is two methods (`.model` for a parameter count,
 `.forecast(...)` for a `ForecastResult`) -- nothing in it is TimesFM-3
 specific. `timesfm3/serving/adapters.py` ships a real adapter for Amazon's
-open-weight Chronos / Chronos-Bolt models
+open-weight Chronos, Chronos-Bolt and Chronos-2 models
 (`pip install "timesfm3[chronos]"`):
 
 ```bash
@@ -296,12 +296,29 @@ TIMESFM3_CHECKPOINTS=demand-v1=my-packed.pt TIMESFM3_CHRONOS_MODELS=amazon/chron
 ```
 
 `GET /v1/models` reports it with `"kind": "chronos"` and
-`"supports_covariates": false` (Chronos has no covariate mechanism; the
-adapter raises rather than silently ignoring one) so API consumers can tell
-it apart from a TimesFM-3 entry. Point `/v1/backtest` at both and let the
-Diebold-Mariano test say which one actually wins on your data. Writing an
-adapter for another vendor's model is the same shape of work --
-`ChronosAdapter` is under 60 lines.
+`"supports_covariates": false` -- the adapter forecasts each target
+univariately and raises on covariates rather than silently ignoring them
+(Chronos-2 itself accepts covariates; wiring them through is not done yet).
+Writing an adapter for another vendor's model is the same shape of work --
+`ChronosAdapter` is under 60 lines. Toto, Kronos and Granite adapters do
+not exist yet.
+
+**Measure before you choose -- including against us.** On the model card's
+ETTh2 panel (same command as the table above, plus
+`TIMESFM3_CHRONOS_MODELS`), every Chronos model beats the bundled starter:
+
+| model | mean MAE | ratio vs starter [95% CI] | verdict (Holm) |
+|---|---|---|---|
+| chronos-bolt-tiny (8.65 M) | 1.709 | 0.783 [0.738, 0.845] | better |
+| chronos-bolt-small (47.7 M) | 1.704 | 0.780 [0.735, 0.839] | better |
+| chronos-2 (119.5 M, univariate) | 1.770 | 0.811 [0.763, 0.872] | better |
+| starter-small (5.2 M) | 2.183 | 1.000 | reference |
+
+If that holds on your data, serve Chronos -- that is what the backtest is
+for. ETTh2 is held out for the original Chronos models, but whether it was
+in Chronos-Bolt's or Chronos-2's training data is not documented, so read
+this as "on this panel", not as a zero-shot result
+([`docs/VERIFICATION.md`](VERIFICATION.md) §9).
 
 ### Classical baselines
 
