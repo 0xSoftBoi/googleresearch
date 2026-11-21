@@ -31,7 +31,7 @@ from collections.abc import Callable, Sequence
 import numpy as np
 import torch
 
-from ..embedding import ROLE_TARGET
+from ..embedding import ROLE_PAST_COVARIATE, ROLE_TARGET
 from ..evaluation import Comparison, compare
 from ..loss import quantile_loss
 from ..model import TimesFM3Model
@@ -54,6 +54,30 @@ class AssetRV:
     dates: np.ndarray    # datetime64[D] of trading days with a finite return
     returns: np.ndarray  # daily log returns on those days
     rv: np.ndarray       # squared returns (floored), the daily variance proxy
+    features: dict = dataclasses.field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.features:
+            self.features = _causal_features(self.rv)
+
+
+#: Input channels a candidate may use. ``log_rv`` is the target channel; the
+#: rest are causal smoothings of the same squared returns (value at day i uses
+#: days <= i only), fed as past-only covariates.
+CHANNELS = ("log_rv", "log_ewma94", "log_mean22")
+
+
+def _causal_features(rv: np.ndarray) -> dict[str, np.ndarray]:
+    ew = np.empty_like(rv)
+    v = float(rv[: min(20, len(rv))].mean())
+    for i, x in enumerate(rv):
+        v = 0.94 * v + 0.06 * x
+        ew[i] = v
+    c = np.concatenate([[0.0], np.cumsum(rv)])
+    idx = np.arange(1, len(rv) + 1)
+    lo = np.maximum(0, idx - 22)
+    m22 = (c[idx] - c[lo]) / (idx - lo)
+    return {"log_ewma94": np.log(ew), "log_mean22": np.log(m22)}
 
 
 def rv_panel(panel) -> list[AssetRV]:
@@ -102,6 +126,18 @@ def targets(asset: AssetRV, t: np.ndarray) -> np.ndarray:
     return np.stack([future[:, 0], future.mean(axis=1)], axis=1)
 
 
+def channel_contexts(asset: AssetRV, t: np.ndarray, channels: Sequence[str] = ("log_rv",),
+                     context: int = CONTEXT) -> np.ndarray:
+    """(len(t), C, context) model inputs; channel 0 must be ``log_rv``."""
+    if channels[0] != "log_rv":
+        raise ValueError("the first channel must be the log_rv target")
+    rows = [log_context(contexts(asset, t, context))]
+    for ch in channels[1:]:
+        series = asset.features[ch]
+        rows.append(np.lib.stride_tricks.sliding_window_view(series, context)[t - context + 1])
+    return np.stack(rows, axis=1)
+
+
 def log_context(ctx: np.ndarray) -> np.ndarray:
     """``log`` variance with each window floored at its own 1st percentile."""
     floor = np.quantile(ctx, 0.01, axis=-1, keepdims=True)
@@ -134,23 +170,28 @@ def har(log_space: bool = False) -> Forecaster:
 
 
 def _patch_batch(x_log: np.ndarray, horizon_patches: int, patch_len: int):
-    b, length = x_log.shape
+    if x_log.ndim == 2:
+        x_log = x_log[:, None, :]
+    b, c, length = x_log.shape
     total = length + horizon_patches * patch_len
-    values = torch.zeros((b, 1, total), dtype=torch.float32)
-    values[:, 0, :length] = torch.as_tensor(x_log, dtype=torch.float32)
-    observed = torch.zeros((b, 1, total), dtype=torch.bool)
-    observed[:, 0, :length] = True
-    roles = torch.full((b, 1), ROLE_TARGET, dtype=torch.int64)
+    values = torch.zeros((b, c, total), dtype=torch.float32)
+    values[:, :, :length] = torch.as_tensor(x_log, dtype=torch.float32)
+    observed = torch.zeros((b, c, total), dtype=torch.bool)
+    observed[:, :, :length] = True
+    roles = torch.full((b, c), ROLE_PAST_COVARIATE, dtype=torch.int64)
+    roles[:, 0] = ROLE_TARGET
     return values, observed, roles
 
 
 def timesfm_log_forward(model: TimesFM3Model, x_log: np.ndarray, horizon_patches: int = 1):
-    """Independent univariate forecasts for a batch of log-variance contexts.
+    """Independent forecasts for a batch of log-variance contexts.
 
-    Returns the model output and the context length; ``point[:, 0, L:, 0]``
-    is the log-variance forecast path.
+    ``x_log`` is (B, L) for univariate input or (B, C, L) with the log_rv
+    target in channel 0 and past-only covariates after it. Returns the model
+    output and the context length; ``point[:, 0, L:, 0]`` is the log-variance
+    forecast path.
     """
-    length = x_log.shape[1]
+    length = x_log.shape[-1]
     cfg = model.config
     if length % cfg.patch_len or length > cfg.max_context_len:
         raise ValueError(f"context {length} must be a multiple of {cfg.patch_len} "
@@ -161,12 +202,13 @@ def timesfm_log_forward(model: TimesFM3Model, x_log: np.ndarray, horizon_patches
     return out, length
 
 
-def timesfm(model: TimesFM3Model, batch_size: int = 256) -> Forecaster:
+def timesfm(model: TimesFM3Model, batch_size: int = 256,
+            channels: Sequence[str] = ("log_rv",)) -> Forecaster:
     model.eval()
 
     @torch.no_grad()
     def fc(asset: AssetRV, t: np.ndarray) -> np.ndarray:
-        x = log_context(contexts(asset, t))
+        x = channel_contexts(asset, t, channels)
         paths = []
         for i in range(0, len(x), batch_size):
             out, length = timesfm_log_forward(model, x[i:i + batch_size])
@@ -274,6 +316,9 @@ def finetune_qlike(
     horizon_patches: int = 1,
     val_every: int = 100,
     seed: int = 0,
+    channels: Sequence[str] = ("log_rv",),
+    step_horizon: int | None = None,
+    agg_weight: float = 1.0,
     log: Callable[[str], None] = print,
 ) -> tuple[dict, list[dict]]:
     """Fine-tunes ``model`` in place on training-split windows; returns (best_state, history).
@@ -304,7 +349,7 @@ def finetune_qlike(
         return lr * 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
 
     def val_score() -> float:
-        fc = timesfm(model)
+        fc = timesfm(model, channels=channels)
         preds = np.concatenate([fc(a, split_origins(a, "val")) for a in val_assets
                                 if split_origins(a, "val").size])
         tgt = val.target
@@ -322,21 +367,24 @@ def finetune_qlike(
         model.train()
         for g in opt.param_groups:
             g["lr"] = lr_at(step - 1)
-        ctx_rows, fut_rows = [], []
+        ctx_rows, fut_rows, x_rows = [], [], []
         for _ in range(batch_size):
             a, pool = pools[rng.integers(len(pools))]
             t = int(pool[rng.integers(len(pool))])
             ctx_rows.append(a.rv[t - CONTEXT + 1:t + 1])
             fut_rows.append(a.rv[t + 1:t + 1 + horizon])
+            x_rows.append(channel_contexts(a, np.array([t]), channels)[0])
         ctx = np.stack(ctx_rows)
         fut = torch.as_tensor(np.stack(fut_rows), dtype=torch.float32)
-        x = log_context(ctx)
-        out, length = timesfm_log_forward(model, x, horizon_patches)
+        x_in = np.stack(x_rows)
+        x = x_in[:, 0, :]
+        out, length = timesfm_log_forward(model, x_in, horizon_patches)
         p = out.point[:, 0, length:, 0]
         lo = torch.as_tensor(x.min(axis=1, keepdims=True) - 8.0, dtype=p.dtype)
         hi = torch.as_tensor(x.max(axis=1, keepdims=True) + 8.0, dtype=p.dtype)
         p = torch.maximum(torch.minimum(p, hi), lo)
-        step_loss = qlike_from_log(p, fut).mean()
+        k = step_horizon or horizon
+        step_loss = qlike_from_log(p[:, :k], fut[:, :k]).mean()
         agg_pred = torch.exp(p[:, :EVAL_HORIZON]).mean(dim=1)
         agg_tgt = fut[:, :EVAL_HORIZON].mean(dim=1)
         agg_loss = (agg_tgt / agg_pred - torch.log(agg_tgt / agg_pred) - 1.0).mean()
@@ -345,7 +393,7 @@ def finetune_qlike(
         std = out.std[:, 0, :]  # (B, 1)
         q = out.quantiles[:, 0, length:, :]
         pin = quantile_loss(q / std[:, :, None], log_fut / std, quantiles).mean()
-        loss = step_loss + agg_loss + pinball_weight * pin
+        loss = step_loss + agg_weight * agg_loss + pinball_weight * pin
         opt.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)

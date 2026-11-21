@@ -299,6 +299,38 @@ Holm-adjusted p < 0.05. h=1, per-asset and SP500-only results are reported
 but do not gate. If the gate fails, nothing is released as "better", and the
 result is published here anyway.
 
+## 12. Fine-tuning runs and candidate selection (validation only; written before the test)
+
+All six pre-registered configurations, every one from `starter-small`, CPU
+only. "Val" is calibrated five-day QLIKE on 2015–2019 (selection metric);
+for reference, on the same view RiskMetrics scores **0.4351**, HAR 0.4536,
+HAR-log 0.8489, zero-shot Chronos-Bolt-tiny 0.6006 and zero-shot
+starter-small 1.4808 (in-sample calibration; Chronos-Bolt-small and
+Chronos-2 were not run on validation to save compute and are scored in the
+test only).
+
+| # | input channels | objective | steps / lr / batch | best val (step) | minutes |
+|---|---|---|---|---|---|
+| 1 | log_rv | per-step QLIKE (32) + 5-day QLIKE + 0.1 pinball | 1500 / 5e-5 / 32 | 0.4778 (800) | 7 |
+| 2 | log_rv | same | 3000 / 1e-4 / 32 | 0.4535 (2600) | 13 |
+| 3 | log_rv, log_ewma94, log_mean22 | same | 2000 / 1e-4 / 32 | 0.4443 (1800) | 25 |
+| 4 | same 3 channels | same | 2500 / 1e-4 / 64 | 0.4452 (2500) | 39 |
+| 5 | same 3 channels | per-step QLIKE (first 5) + 2× 5-day QLIKE + 0.1 pinball | 2500 / 1e-4 / 32 | 0.4401 (2500) | 27 |
+| 6 | same 3 channels | as 5 | 6000 / 1e-4 / 32 | **0.4384 (3500)** | 31 |
+
+`log_ewma94` and `log_mean22` are causal smoothings of the same squared
+returns (λ=0.94 EWMA and a 22-day mean, each using days ≤ *t*), fed as
+past-only covariates — the multivariate input TimesFM-3 supports and
+univariate Chronos-Bolt does not. `tests/test_volmodel.py` checks they do
+not use future data.
+
+**Selected candidate: #6**, `timesfm3-vol-small`, sha256
+`cf0be3950fdd6d6d029e216f0a52305d703447f698f9738bd1c0ce641dea6862`
+(10,401,768 bytes). On validation it beats HAR and every zero-shot model
+but is still 0.75% behind RiskMetrics, so the gate (significantly better
+than all seven competitors) is expected to be hard to pass. The test below
+is run once, with this file.
+
 ---
 
 ## How to re-run this audit

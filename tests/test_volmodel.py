@@ -83,3 +83,28 @@ def test_finetune_qlike_lowers_the_training_objective():
     _, hist = vm.finetune_qlike(model, [a], steps=30, batch_size=8, lr=1e-3, warmup=5, log=lambda s: None)
     first, last = np.mean([h["loss"] for h in hist[:5]]), np.mean([h["loss"] for h in hist[-5:]])
     assert np.isfinite(last) and last < first
+
+
+def test_feature_channels_are_causal():
+    a = _asset()
+    b = vm.AssetRV("X", a.dates, a.returns, a.rv.copy())
+    b.rv[3000:] *= 50.0          # change the future only
+    b.features = vm._causal_features(b.rv)
+    for ch in vm.CHANNELS[1:]:
+        np.testing.assert_allclose(a.features[ch][:3000], b.features[ch][:3000])  # past unaffected
+        assert not np.allclose(a.features[ch][3000:3010], b.features[ch][3000:3010])
+
+
+def test_multichannel_forward_and_forecaster_shapes():
+    torch.manual_seed(0)
+    model = TimesFM3Forecaster(TimesFM3Config.tiny(), device="cpu").model
+    a = _asset()
+    t = vm.split_origins(a, "val")[:4]
+    x = vm.channel_contexts(a, t, vm.CHANNELS)
+    assert x.shape == (4, 3, vm.CONTEXT)
+    cfg = TimesFM3Config.tiny()
+    if vm.CONTEXT <= cfg.max_context_len:
+        out = vm.timesfm(model, channels=vm.CHANNELS)(a, t)
+        assert out.shape == (4, 2) and np.all(out > 0)
+    with pytest.raises(ValueError):
+        vm.channel_contexts(a, t, ("log_ewma94",))

@@ -88,11 +88,13 @@ def cmd_finetune(args) -> None:
     torch.set_num_threads(args.threads)
     assets = vm.rv_panel(load_universe(cache_dir="data/fred", verbose=False))
     model = load_model(args.base)
+    channels = tuple(args.channels.split(","))
     t0 = time.time()
-    val = vm.collect(assets, "val", {"_": vm.timesfm(model)})
+    val = vm.collect(assets, "val", {"_": vm.timesfm(model, channels=channels)})
     best_state, history = vm.finetune_qlike(
         model, assets, val=val, val_assets=assets, steps=args.steps, batch_size=args.batch_size,
         lr=args.lr, pinball_weight=args.pinball_weight, val_every=args.val_every, seed=args.seed,
+        channels=channels, step_horizon=args.step_horizon, agg_weight=args.agg_weight,
     )
     scratch = args.out + ".train.pt"
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
@@ -107,9 +109,11 @@ def cmd_finetune(args) -> None:
         "base_checkpoint": base_meta.get("name", args.base),
         "task": "variance forecasting (input: log squared daily returns, 512-day context)",
         "context": vm.CONTEXT,
+        "input_channels": list(channels),
         "corpus": "FRED multi-asset panel (timesfm3.data.markets.DEFAULT_UNIVERSE), "
                   f"windows with targets before {vm.TRAIN_END}",
-        "objective": "QLIKE on exp(point) per step + 5-day mean, + "
+        "objective": f"QLIKE on exp(point) per step (first {args.step_horizon or 32} steps) + "
+                     f"{args.agg_weight} x QLIKE of the 5-day mean + "
                      f"{args.pinball_weight} x pinball on log variance",
         "finetune_steps": args.steps, "finetune_lr": args.lr, "batch_size": args.batch_size,
         "seed": args.seed, "best_val_qlike_5d_calibrated": best_val,
@@ -124,7 +128,9 @@ def cmd_finetune(args) -> None:
 def cmd_test(args) -> None:
     assets = vm.rv_panel(load_universe(cache_dir="data/fred", verbose=False))
     models = competitors()
-    models[args.name] = vm.timesfm(load_model(args.candidate))
+    channels = tuple(load_checkpoint(args.candidate)["meta"].get("input_channels", ["log_rv"]))
+    print(f"candidate {args.candidate}: input channels {channels}")
+    models[args.name] = vm.timesfm(load_model(args.candidate), channels=channels)
     val = vm.collect(assets, "val", models, verbose=True)
     calibration = vm.fit_calibration(val)
     test = vm.collect(assets, "test", models, verbose=True)
@@ -178,6 +184,11 @@ def main() -> None:
     f.add_argument("--val-every", type=int, default=100)
     f.add_argument("--seed", type=int, default=0)
     f.add_argument("--threads", type=int, default=4)
+    f.add_argument("--step-horizon", type=int, default=None,
+                   help="per-step QLIKE over only the first k forecast steps")
+    f.add_argument("--agg-weight", type=float, default=1.0)
+    f.add_argument("--channels", default="log_rv",
+                   help=f"comma-separated, log_rv first; available: {','.join(vm.CHANNELS)}")
     f.set_defaults(func=cmd_finetune)
     t = sub.add_parser("test")
     t.add_argument("--candidate", required=True)
