@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.9.1 — stop the model research, launch the benchmark
+
+- `docs/launch/volatility-benchmark.md`: launch write-up of the volatility
+  results (ledger §11–16). Zero-shot foundation models lose to RiskMetrics
+  by 31–43% on 2020–2026 five-day QLIKE (up to 3.2× on unseen assets); two
+  pre-registered fine-tunes tie the classical frontier without beating it.
+- `docs/LAUNCH.md`: deploy checklist (the edge Worker is not yet deployed),
+  Show HN / Reddit / X copy, a direct-outreach script for quant and risk
+  teams, day-14 success metrics, and what we are deliberately not doing.
+- Landing page: new volatility benchmark section; the unverifiable "two
+  planted spikes" anomaly sentence (flagged in ledger §1) and the unproven
+  "base config closes the gap" roadmap claim are replaced with the measured
+  Chronos result. README links the write-up.
+
 ## 0.9.0 — measured against the competition, research re-verified
 
 ### Volatility attempt 2: more data (pre-registered; gate failed, not released)

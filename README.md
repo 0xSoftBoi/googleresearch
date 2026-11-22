@@ -10,6 +10,10 @@ Google Research's
 architecture, with a bundled pre-trained starter model (5.2 M parameters,
 trained on public benchmark data) so it works out of the box on CPU.
 
+> **Benchmark:** [A 1994 formula still beats time-series foundation models at
+> volatility](docs/launch/volatility-benchmark.md). Two attempts, pre-registered,
+> losing rows published.
+
 ```bash
 pip install "timesfm3[serve] @ git+https://github.com/0xSoftBoi/googleresearch"
 timesfm3 serve                      # dashboard http://localhost:8000  docs /docs

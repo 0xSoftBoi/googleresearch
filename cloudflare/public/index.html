@@ -107,7 +107,21 @@
     <tr><td>last-value</td><td>2.479</td><td class="ref">1.000</td><td>—</td><td>—</td><td>—</td><td class="ref">reference</td></tr>
     <tr><td>drift</td><td>2.488</td><td>1.004</td><td>[0.993, 1.015]</td><td>1.000</td><td>51%</td><td class="nodiff">no difference</td></tr>
   </table></div>
-  <p style="color:var(--muted);font-size:14px;margin-top:12px">Anomaly detection on seasonal data with two planted spikes: the bundled model flags exactly those two with zero false alarms; EWMA misses one and raises five. The 334M <code>base</code> configuration trained on GPU is the roadmap item that closes the forecasting gap — Enterprise customers get it first.</p>
+  <p style="color:var(--muted);font-size:14px;margin-top:12px">Same harness, other models: Chronos-Bolt-tiny beats this starter on ETTh2 (MAE ratio 0.78, significant). The registry serves Chronos next to TimesFM-3, so you can pick the model your own backtest favours instead of the one we ship.</p>
+</div></section>
+
+<section id="volatility"><div class="wrap">
+  <div class="kicker">Volatility, measured</div>
+  <h2>A 1994 formula still beats foundation models at volatility</h2>
+  <p class="lead">Five-day variance forecasts, 2020–2026 FRED daily data, QLIKE loss, every model calibrated on 2015–2019. Zero-shot foundation models lose to RiskMetrics. Our fine-tuned model ties it and beats HAR and every Chronos model, but the pre-registered gate required beating everything, so it did not ship. <code>/v1/volatility</code> serves the models that won: RiskMetrics and HAR.</p>
+  <div class="card" style="margin-top:20px;overflow-x:auto"><table>
+    <tr><th>model</th><th>QLIKE vs RiskMetrics</th><th>on 11 never-seen assets</th></tr>
+    <tr><td><b>RiskMetrics</b> EWMA λ=0.94 (1994)</td><td class="ref">1.00×</td><td class="ref">1.00×</td></tr>
+    <tr><td>our TimesFM-3, fine-tuned on QLIKE</td><td>1.01× (tie)</td><td>0.97× (not significant)</td></tr>
+    <tr><td>Chronos-Bolt-small, zero-shot</td><td>1.31×</td><td>1.37×</td></tr>
+    <tr><td>Chronos-2, zero-shot</td><td>1.43×</td><td>3.22×</td></tr>
+  </table></div>
+  <p style="color:var(--muted);font-size:14px;margin-top:12px">Lower is better. Protocol, every training run and raw results: <a href="https://github.com/0xSoftBoi/googleresearch/blob/main/docs/launch/volatility-benchmark.md" rel="noopener">the write-up</a>.</p>
 </div></section>
 
 <section id="pricing"><div class="wrap">
