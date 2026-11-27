@@ -110,7 +110,9 @@ CRYPTO_UNIVERSE: tuple[Instrument, ...] = (
 )
 
 #: CBOE implied-volatility index (FRED close, annualized %) for each asset
-#: that has one.  NASDAQ (composite) uses the Nasdaq-100 index as a proxy.
+#: that has one, or the closest proxy: NASDAQ (composite) uses the Nasdaq-100
+#: index, and BRENT uses OVX, which is CBOE's *WTI* crude volatility index (there
+#: is no Brent index on FRED).
 IMPLIED_VOL: dict[str, str] = {
     "SP500": "VIXCLS",
     "NASDAQ": "VXNCLS",

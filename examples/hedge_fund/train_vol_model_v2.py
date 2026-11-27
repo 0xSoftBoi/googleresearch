@@ -139,6 +139,9 @@ def cmd_finetune(args) -> None:
 
 
 def cmd_test(args) -> None:
+    if os.path.exists(args.json) and not args.force:
+        raise SystemExit(f"{args.json} exists: that test has been run. A pre-registered test runs "
+                         "once; pass --json for a new file (or --force to overwrite).")
     train, holdout = load_assets()
     models = competitors()
     channels = tuple(load_checkpoint(args.candidate)["meta"]["input_channels"])
@@ -204,6 +207,7 @@ def main() -> None:
     t.add_argument("--candidate", required=True)
     t.add_argument("--name", default="timesfm3-vol-small-v2")
     t.add_argument("--json", default="results/vol_test_v2.json")
+    t.add_argument("--force", action="store_true", help="overwrite an existing result file")
     t.set_defaults(func=cmd_test)
     args = ap.parse_args()
     args.func(args)

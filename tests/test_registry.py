@@ -87,3 +87,20 @@ def test_from_env_named_checkpoints(tmp_path, monkeypatch):
     reg = ModelRegistry.from_env(include_bundled=False, device="cpu")
     assert "alpha" in reg and "beta" in reg
     assert reg.get().kind == "timesfm3"
+
+
+def test_add_checkpoint_keeps_a_foreign_forecaster_default(tmp_path):
+    """A non-TimesFM forecaster (e.g. Chronos) that is the default stays the default."""
+    from timesfm3 import TimesFM3Forecaster
+
+    cfg = TimesFM3Config.tiny()
+    raw = tmp_path / "raw.pt"
+    torch.save({"config": cfg, "model": TimesFM3Model(cfg).state_dict()}, raw)
+    package_checkpoint(str(raw), str(tmp_path / "ckpt.pt"))
+    reg = ModelRegistry()
+    reg.add_forecaster("foreign", TimesFM3Forecaster(cfg, device="cpu"), kind="chronos")
+    assert reg.default == "foreign"
+    reg.add_checkpoint(str(tmp_path / "ckpt.pt"), name="ckpt", device="cpu", make_default=False)
+    assert reg.default == "foreign"
+    reg.add_checkpoint(str(tmp_path / "ckpt.pt"), name="ckpt2", device="cpu", make_default=True)
+    assert reg.default == "ckpt2"

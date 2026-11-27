@@ -25,6 +25,7 @@ from .strategies import (
 )
 from .volatility import (
     HAR,
+    ewma_of_variance,
     ewma_variance,
     qlike,
     realized_variance,
@@ -35,6 +36,7 @@ __all__ = [
     "BacktestResult",
     "HAR",
     "backtest_portfolio",
+    "ewma_of_variance",
     "ewma_variance",
     "forecast_signal_positions",
     "performance_stats",

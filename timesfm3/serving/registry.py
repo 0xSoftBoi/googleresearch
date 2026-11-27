@@ -217,7 +217,7 @@ class ModelRegistry:
             _forecaster=forecaster,
         )
         self._entries[name] = entry
-        if make_default or self.default is None or self._entries[self.default].kind != "timesfm3":
+        if make_default or self.default is None or self._entries[self.default]._forecaster is None:
             self.default = name
         return entry
 

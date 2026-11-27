@@ -306,8 +306,10 @@ only. "Val" is calibrated five-day QLIKE on 2015–2019 (selection metric);
 for reference, on the same view RiskMetrics scores **0.4351**, HAR 0.4536,
 HAR-log 0.8489, zero-shot Chronos-Bolt-tiny 0.6006 and zero-shot
 starter-small 1.4808 (in-sample calibration; Chronos-Bolt-small and
-Chronos-2 were not run on validation to save compute and are scored in the
-test only).
+Chronos-2 were left out of this selection-time reference view to save
+compute. The test command later runs every competitor, these two included,
+on validation to fit its calibration scale, which is why
+`results/vol_test.json` lists scales for them.)
 
 | # | input channels | objective | steps / lr / batch | best val (step) | minutes |
 |---|---|---|---|---|---|

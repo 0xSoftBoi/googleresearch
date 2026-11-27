@@ -28,10 +28,15 @@ migration.
    deploy && npx wrangler d1 migrations apply timesfm3-credits --remote`. You get
    `timesfm3-edge.<account>.workers.dev`: landing page, JS classical API,
    in-browser TimesFM-3, waitlist in KV. There is no backend to pay for.
-3. Optional: attach a custom domain in the Cloudflare dashboard, then replace
+3. Set the `ADMIN_TOKEN` secret so you can read signups: `cd cloudflare &&
+   npx wrangler secret put ADMIN_TOKEN` (any long random string), or add it
+   under the Worker's *Settings → Variables and Secrets*. Without it,
+   `GET /api/leads` is locked and the day-14 table below has no signup count.
+4. Optional: attach a custom domain in the Cloudflare dashboard, then replace
    `<URL>` in the copy below.
-4. Smoke test: open the landing page, run the in-browser forecast, and submit
-   the waitlist form once with your own email.
+5. Smoke test: open the landing page, run the in-browser forecast, submit
+   the waitlist form once with your own email, then check it arrived:
+   `curl -H "authorization: Bearer $ADMIN_TOKEN" <URL>/api/leads`.
 
 ## Day 1: post the benchmark (one channel at a time, reply to every comment)
 

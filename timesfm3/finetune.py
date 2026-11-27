@@ -118,7 +118,9 @@ def finetune(
         from .serving.app import run_backtest
         from .serving.registry import ModelRegistry
 
-        reg = ModelRegistry.from_env(include_bundled=False, device=device)
+        # Only the two checkpoints plus the classical baselines: no env-listed
+        # checkpoints or Chronos models, which this comparison does not need.
+        reg = ModelRegistry()
         reg.add_checkpoint(base_checkpoint, name="base", device=device)
         reg.add_checkpoint(output, name=name, device=device)
         context = context_patches * cfg.patch_len

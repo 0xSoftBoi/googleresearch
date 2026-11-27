@@ -361,6 +361,12 @@ def create_app(
                 raise HTTPException(
                     status_code=400, detail="timestamps must have one entry per context step."
                 )
+            if req.timestamps is not None and any(len(t.values) != context for t in req.targets):
+                # One timestamp axis per request: every target must share it.
+                raise HTTPException(
+                    status_code=400,
+                    detail="With timestamps, every target must have one value per timestamp.",
+                )
             charge(key, len(req.targets) * req.horizon, response)
             targets = [_to_array(s) for s in req.targets]
             past = [_to_array(s) for s in req.past_covariates]

@@ -35,7 +35,7 @@ from ..embedding import ROLE_PAST_COVARIATE, ROLE_TARGET
 from ..evaluation import Comparison, compare
 from ..loss import quantile_loss
 from ..model import TimesFM3Model
-from .volatility import HAR, ewma_variance, qlike, realized_variance
+from .volatility import HAR, ewma_of_variance, qlike, realized_variance
 
 CONTEXT = 512
 HORIZONS = (1, 5)
@@ -97,7 +97,7 @@ def rv_panel(panel) -> list[AssetRV]:
     for name, r in zip(panel.names, panel.returns):
         ok = np.isfinite(r)
         rr = np.asarray(r[ok], dtype=np.float64)
-        out.append(AssetRV(name, panel.dates[ok], rr, realized_variance(rr, demean=False)))
+        out.append(AssetRV(name, panel.dates[ok], rr, realized_variance(rr)))
     return out
 
 
@@ -165,7 +165,8 @@ def _to_horizons(var_path: np.ndarray) -> np.ndarray:
 
 def riskmetrics() -> Forecaster:
     def fc(asset: AssetRV, t: np.ndarray) -> np.ndarray:
-        ewma = ewma_variance(asset.returns)  # ewma[t + 1] uses information through t
+        # Same variance proxy as the targets and HAR; ewma[t + 1] uses rv[: t + 1] only.
+        ewma = ewma_of_variance(asset.rv)
         f = ewma[t + 1]
         return np.stack([f, f], axis=1)  # RiskMetrics' multi-step forecast is flat
     return fc
@@ -227,7 +228,9 @@ def har_iv(min_coverage: float = 0.9) -> Forecaster:
             return plain.forecast(rv, EVAL_HORIZON)
         x, y = x[ok], y[ok]
         beta = np.linalg.solve(x.T @ x + 1e-8 * np.eye(5), x.T @ y)
-        hist = list(y_all[-m:])
+        # Iterate from raw history like plain HAR (the fit is on winsorized levels in
+        # both), so HAR vs HAR-IV differs only by the implied-variance term.
+        hist = list(rv[-m:])
         out = np.empty(EVAL_HORIZON)
         for k in range(EVAL_HORIZON):
             arr = np.asarray(hist[-m:])
@@ -406,7 +409,8 @@ def finetune_qlike(
     The objective is per-step QLIKE over the forecast patch, plus QLIKE of the
     five-day mean variance, plus a small pinball term on log variance (in the
     model's normalized units) that keeps the quantile head calibrated. Model
-    selection uses calibrated five-day QLIKE on ``val`` when given.
+    selection uses calibrated five-day QLIKE on ``val`` (scored on ``val_assets``) when
+    given; without ``val`` the final weights are returned.
     """
     rng = np.random.default_rng(seed)
     torch.manual_seed(seed)
@@ -448,6 +452,8 @@ def finetune_qlike(
         return float(qlike(preds * scale, tgt)[:, 1].mean())
 
     history: list[dict] = []
+    if val is not None and not val_assets:
+        raise ValueError("val_assets is required when val is given")
     best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
     best = val_score() if val is not None else float("inf")
     if val is not None:
@@ -503,4 +509,6 @@ def finetune_qlike(
             log(f"step {step:6d}  loss {loss.item():.4f}  val QLIKE(5d, calibrated) {score:.4f}"
                 f"{marker}  [{(time.time() - t0) / 60:.1f} min]")
         history.append(rec)
+    if val is None:  # no selection: return what was trained, not the base weights
+        best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
     return best_state, history

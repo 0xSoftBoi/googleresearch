@@ -43,6 +43,17 @@ def test_forecast_default_model_with_timestamps(client, seasonal):
     assert j["latency_ms"] > 0
 
 
+def test_forecast_rejects_unequal_targets_with_timestamps(client, seasonal):
+    # A model that accepts ragged histories (e.g. Chronos) must not get one
+    # timestamp axis applied to targets of different lengths.
+    stamps = [str(np.datetime64("2024-01-01T00:00") + np.timedelta64(i, "h")) for i in range(96)]
+    r = client.post("/v1/forecast", json={
+        "targets": [_series(seasonal[:96], "a"), _series(seasonal[:90], "b")],
+        "horizon": 4, "timestamps": stamps, "model": "ewma",
+    })
+    assert r.status_code == 400 and "timestamp" in r.json()["detail"]
+
+
 def test_forecast_classical_freq_and_no_quantiles(client, seasonal):
     r = client.post("/v1/forecast", json={
         "targets": [_series(seasonal[:50])], "horizon": 5, "model": "ar4", "quantiles": False,

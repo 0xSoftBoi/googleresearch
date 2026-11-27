@@ -6,7 +6,7 @@ is highly forecastable -- which is why volatility models, not return models,
 are the first thing risk desks and options desks run in production.  This
 module provides:
 
-- :func:`realized_variance` -- squared demeaned daily returns, the standard
+- :func:`realized_variance` -- squared daily returns (causal floor), the standard
   daily proxy for latent variance when intraday data is unavailable.
 - :func:`ewma_variance` -- the RiskMetrics filter (lambda = 0.94), the
   industry default since J.P. Morgan published it in 1994.
@@ -40,17 +40,34 @@ from ..baselines import Baseline
 TRADING_DAYS = 252
 
 
-def realized_variance(returns: np.ndarray, demean: bool = True) -> np.ndarray:
-    """Daily variance proxy: squared (optionally demeaned) returns.
+#: Days used to set the zero-return floor. The floor is fixed from the
+#: series' first year, which precedes every forecast origin a walk-forward
+#: harness scores (contexts are >= 256 days), so no later return can move an
+#: earlier value.
+FLOOR_WINDOW = 252
+
+
+def realized_variance(returns: np.ndarray, demean: bool = False,
+                      floor_window: int = FLOOR_WINDOW) -> np.ndarray:
+    """Daily variance proxy: squared daily returns, causal by construction.
 
     With only daily data, r_t^2 is the standard unbiased-but-noisy proxy for
-    the day's integrated variance; a tiny floor keeps log-space models and
-    QLIKE defined on zero-return days.
+    the day's integrated variance (RiskMetrics assumes a zero daily mean, and
+    so does this proxy by default). A tiny floor keeps log-space models and
+    QLIKE defined on zero-return days; it is 1e-4 times the median squared
+    return of the first ``floor_window`` finite observations, so values at
+    day t never depend on returns after the first year.
+
+    ``demean=True`` subtracts the mean of those same first ``floor_window``
+    observations (not the full-history mean, which would leak future returns
+    into every earlier value).
     """
     r = np.asarray(returns, dtype=np.float64)
-    mu = np.nanmean(r) if demean else 0.0
+    head = r[np.isfinite(r)][:floor_window]
+    mu = float(np.mean(head)) if (demean and head.size) else 0.0
     rv = (r - mu) ** 2
-    floor = max(np.nanmedian(rv) * 1e-4, 1e-12)
+    head_rv = (head - mu) ** 2
+    floor = max(float(np.median(head_rv)) * 1e-4, 1e-12) if head_rv.size else 1e-12
     return np.maximum(rv, floor)
 
 
@@ -61,11 +78,33 @@ def ewma_variance(returns: np.ndarray, lam: float = 0.94) -> np.ndarray:
     one-step-ahead forecast series.  Seeded with the expanding mean of the
     first 20 squared returns.
     """
-    rv = realized_variance(returns)
+    return ewma_of_variance(realized_variance(returns), lam)
+
+
+def ewma_of_variance(rv: np.ndarray, lam: float = 0.94) -> np.ndarray:
+    """The RiskMetrics recursion applied to an existing daily variance series.
+
+    ``out[t]`` uses ``rv[:t]`` only.  Use this when the variance proxy is
+    already built (e.g. a benchmark's target series), so the filter and the
+    targets share one definition.
+    """
+    rv = np.asarray(rv, dtype=np.float64)
     out = np.full_like(rv, np.nan)
     finite = np.flatnonzero(np.isfinite(rv))
     if len(finite) < 2:
         return out
+    # Seed with the mean of the first few finite squared returns (an asset
+    # may be born mid-panel, so "first 20 rows" would be all-NaN).  The
+    # seed peeks at most 20 days past the series start; callers require far
+    # longer warmups than that before trading.
+    var = float(np.mean(rv[finite[: min(20, len(finite))]]))
+    start = int(finite[0])
+    out[start] = var
+    for t in range(start + 1, len(rv)):
+        out[t] = var
+        if np.isfinite(rv[t]):
+            var = lam * var + (1.0 - lam) * rv[t]
+    return out
     # Seed with the mean of the first few finite squared returns (an asset
     # may be born mid-panel, so "first 20 rows" would be all-NaN).  The
     # seed peeks at most 20 days past the series start; callers require far

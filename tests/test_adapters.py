@@ -21,13 +21,22 @@ needs_chronos = pytest.mark.skipif(
 
 MODEL_ID = "amazon/chronos-bolt-tiny"
 
+# Only a failed download skips; package, API or forecast errors must fail.
+# Hugging Face Hub errors subclass OSError; httpx transport errors do not.
+try:
+    import httpx
+
+    NETWORK_ERRORS: tuple[type[BaseException], ...] = (OSError, httpx.HTTPError)
+except ImportError:  # pragma: no cover
+    NETWORK_ERRORS = (OSError,)
+
 
 @pytest.fixture(scope="module")
 def chronos_adapter():
     pytest.importorskip("chronos")
     try:
         return ChronosAdapter(MODEL_ID, device="cpu")
-    except Exception as exc:  # pragma: no cover - environment without network
+    except NETWORK_ERRORS as exc:  # pragma: no cover - environment without network
         pytest.skip(f"could not fetch {MODEL_ID}: {exc}")
 
 
@@ -51,7 +60,7 @@ def test_add_chronos_registers_a_real_forecaster_alongside_timesfm3():
     reg = ModelRegistry()
     try:
         entry = add_chronos(reg, MODEL_ID, name="chronos-tiny", device="cpu")
-    except Exception as exc:  # pragma: no cover - environment without network
+    except NETWORK_ERRORS as exc:  # pragma: no cover - environment without network
         pytest.skip(f"could not fetch {MODEL_ID}: {exc}")
     assert entry.kind == "chronos"
     assert entry.supports_covariates is False

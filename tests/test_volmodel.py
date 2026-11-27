@@ -80,9 +80,21 @@ def test_finetune_qlike_lowers_the_training_objective():
     torch.manual_seed(0)
     model = TimesFM3Forecaster(TimesFM3Config.tiny(), device="cpu").model
     a = _asset(start="2000-01-01", days=4000)
-    _, hist = vm.finetune_qlike(model, [a], steps=30, batch_size=8, lr=1e-3, warmup=5, log=lambda s: None)
+    base = {k: v.detach().clone() for k, v in model.state_dict().items()}
+    state, hist = vm.finetune_qlike(model, [a], steps=30, batch_size=8, lr=1e-3, warmup=5, log=lambda s: None)
     first, last = np.mean([h["loss"] for h in hist[:5]]), np.mean([h["loss"] for h in hist[-5:]])
     assert np.isfinite(last) and last < first
+    # Without a validation set the trained weights come back, not the base ones.
+    assert any(not torch.equal(state[k], base[k]) for k in base)
+    assert all(torch.equal(state[k], v) for k, v in model.state_dict().items())
+
+
+def test_finetune_qlike_requires_val_assets_with_val():
+    model = TimesFM3Forecaster(TimesFM3Config.tiny(), device="cpu").model
+    a = _asset(start="2000-01-01", days=4000)
+    f = vm.Forecasts(np.array([a.dates[0]]), np.array(["X"]), np.ones((1, 2)), {"m": np.ones((1, 2))})
+    with pytest.raises(ValueError, match="val_assets"):
+        vm.finetune_qlike(model, [a], val=f, steps=1, log=lambda s: None)
 
 
 def test_feature_channels_are_causal():
@@ -134,3 +146,33 @@ def test_implied_vol_competitors():
     assert np.isfinite(a.features["log_iv"]).all()
     out = vm.har_iv()(a, t)
     assert out.shape == (5, 2) and np.all(out > 0)
+
+
+def test_no_future_return_changes_any_earlier_input_target_or_benchmark():
+    """Rebuild an asset with every return after day k replaced: nothing up to k may move."""
+    rng = np.random.default_rng(3)
+    dates = np.arange(np.datetime64("2010-01-01"), np.datetime64("2010-01-01") + 1600)
+    r = rng.normal(0, 0.01, 1600)
+    r[rng.choice(1600, 40, replace=False)] = 0.0          # zero-return days hit the floor
+    k = 900
+    r2 = r.copy()
+    r2[k + 1:] = rng.normal(0.02, 0.2, 1600 - k - 1)      # wild, positive-mean future
+    a1 = vm.AssetRV("X", dates, r, vm.realized_variance(r))
+    a2 = vm.AssetRV("X", dates, r2, vm.realized_variance(r2))
+    np.testing.assert_array_equal(a1.rv[:k + 1], a2.rv[:k + 1])
+    for ch in ("log_ewma94", "log_mean22"):
+        np.testing.assert_array_equal(a1.features[ch][:k + 1], a2.features[ch][:k + 1])
+    t = np.arange(vm.CONTEXT - 1, k - vm.EVAL_HORIZON + 1)  # targets end at or before day k
+    np.testing.assert_array_equal(vm.contexts(a1, t), vm.contexts(a2, t))
+    np.testing.assert_array_equal(vm.targets(a1, t), vm.targets(a2, t))
+    for fc in (vm.riskmetrics(), vm.har(), vm.har(log_space=True)):
+        np.testing.assert_array_equal(fc(a1, t), fc(a2, t))
+
+
+def test_ewma_variance_is_causal():
+    from timesfm3.quant import ewma_variance
+    rng = np.random.default_rng(4)
+    r = rng.normal(0, 0.01, 800)
+    r2 = r.copy()
+    r2[500:] += 0.05
+    np.testing.assert_array_equal(ewma_variance(r)[:501], ewma_variance(r2)[:501])
