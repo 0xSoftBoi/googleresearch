@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -20,13 +21,14 @@ from timesfm3.serving.auth import ApiKey, KeyStore, UsageMeter
 from timesfm3.serving.privacypass import DENOMINATIONS, POINTS_PER_TOKEN, PrivacyPassService, generate_private_jwk
 
 NODE = shutil.which("node")
-PP_TS = "/home/user/googleresearch/cloudflare/node_modules/@cloudflare/privacypass-ts/lib/src/index.js"
+CLOUDFLARE_DIR = Path(__file__).resolve().parent.parent / "cloudflare"
+PP_TS = str(CLOUDFLARE_DIR / "node_modules/@cloudflare/privacypass-ts/lib/src/index.js")
 HAS_TS = NODE is not None and os.path.exists(PP_TS)
 
 
 def _node(script: str, payload: dict) -> dict:
     res = subprocess.run([NODE, "--input-type=module", "-e", script], input=json.dumps(payload),
-                         capture_output=True, text=True, cwd="/home/user/googleresearch/cloudflare")
+                         capture_output=True, text=True, cwd=CLOUDFLARE_DIR)
     assert res.returncode == 0, res.stderr
     return json.loads(res.stdout.strip().splitlines()[-1])
 
