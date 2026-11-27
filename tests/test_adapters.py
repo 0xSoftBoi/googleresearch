@@ -76,10 +76,10 @@ def test_add_chronos_registers_a_real_forecaster_alongside_timesfm3():
 class _StubPipeline:
     """Mimics the two predict_quantiles return conventions without weights."""
 
-    def __init__(self, listwise: bool):
+    def __init__(self, listwise: bool, crossed: bool = False):
         import torch
 
-        self.listwise = listwise
+        self.listwise, self.crossed = listwise, crossed
         self.model = torch.nn.Linear(2, 2)
 
     def predict_quantiles(self, inputs, prediction_length, quantile_levels):
@@ -90,6 +90,8 @@ class _StubPipeline:
             for i in range(len(inputs))
         ])  # (C, H, Q)
         m = q[..., len(quantile_levels) // 2]
+        if self.crossed:  # swap two heads, as an uncalibrated model can
+            q[..., [1, 2]] = q[..., [2, 1]]
         if self.listwise:  # Chronos-2: one (1, H, Q) / (1, H) tensor per input
             return [q[i : i + 1] for i in range(len(inputs))], [m[i : i + 1] for i in range(len(inputs))]
         return q, m  # Chronos / Chronos-Bolt: stacked tensors
@@ -104,3 +106,11 @@ def test_adapter_normalizes_both_pipeline_output_shapes(listwise):
     assert r.point.shape == (3, 7) and r.quantiles.shape == (3, 7, 9)
     assert np.allclose(r.point[:, 0], [0.5, 1.5, 2.5])  # series order preserved
     assert np.all(np.diff(r.quantiles, axis=-1) > 0)
+
+
+def test_adapter_returns_non_crossing_quantiles():
+    adapter = ChronosAdapter.__new__(ChronosAdapter)
+    adapter.model_id, adapter.pipeline = "stub", _StubPipeline(False, crossed=True)
+    adapter.model = adapter.pipeline.model
+    r = adapter.forecast([np.zeros(50), np.ones(40)], horizon=5)
+    assert np.all(np.diff(r.quantiles, axis=-1) >= 0)

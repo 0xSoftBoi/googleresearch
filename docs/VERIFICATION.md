@@ -1,7 +1,9 @@
 # Verification ledger
 
-*Audit date: 2026-09-04, from a fresh clone in a clean 4-vCPU CPU-only
-container (torch 2.14.0+cpu, Python 3.11). Every measured number in
+*Audit date: 2026-09-04 for sections 1–8, from a fresh clone in a clean
+4-vCPU CPU-only container (torch 2.14.0+cpu, Python 3.11). Sections 9–16
+were measured on 2026-11-21 (torch 2.15.0, Python 3.13) and section 17 on
+2026-11-27 (torch 2.15.0+cpu, Python 3.11); each names its own commands. Every measured number in
 `README.md`, `docs/PRODUCT.md`, `docs/HEDGE_FUND_APPLICATIONS.md` and
 `docs/BUSINESS.md` was re-run from the commands below, and every external
 citation was re-fetched and read. Verdicts:*

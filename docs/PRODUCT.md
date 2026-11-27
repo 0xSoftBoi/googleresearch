@@ -85,11 +85,8 @@ timesfm3 anomalies metrics.csv --context 192 --block 24 --threshold 2
 Each point is scored against the forecast the model made *before seeing
 it*: `score = 1` sits on the q10/q90 edge, so the default threshold of 2 is
 roughly 2.6σ for a Gaussian band (~1% of points). Tune `--threshold` on
-your own data: the neural model's band follows seasonality, so a spike
-that sits inside EWMA's flat band scores higher against the starter model
-(in a re-run on a synthetic daily/weekly sinusoid with two ±12 spikes the
-starter scored them 1.8–1.9 and EWMA 0.5–1.0, so neither crossed 2.0 and
-a threshold of 1.5 would have flagged both for the starter only). The
+your own data: the neural model's band follows seasonality while EWMA's is
+flat, so the two score the same spike differently. The
 suite's `tests/test_anomaly.py` pins the behaviour on a random walk with two
 planted ±8 spikes: both flagged, at most a handful of false alarms.
 
@@ -104,9 +101,9 @@ validates on the last 20%, packages the result, then runs the same
 walk-forward backtest the API serves on that held-out tail — base model vs
 fine-tuned vs the classical baselines — and prints the verdict. On the ETTh2
 demo panel, 200 CPU steps (under a minute) cut MAE versus the base model by
-2.3% in the 2026-09-01 run and 1.1% in a 2026-09-04 re-run on a different
-torch build (same seed; the small gain is real but noisy), and on that
-held-out tail AR(4) beat both — which is exactly what the printed table is
+1.1% in the 2026-09-04 re-run (ledger §1; an earlier 2.3% figure did not
+reproduce, so the gain is small and noisy), and on that held-out tail AR(4)
+beat both — which is exactly what the printed table is
 for. Serve the result with `timesfm3 serve --checkpoint sales-v1=sales-v1.pt`.
 
 ### Backtest before you believe anything

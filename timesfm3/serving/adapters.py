@@ -71,9 +71,12 @@ class ChronosAdapter:
         if isinstance(quantiles, (list, tuple)):
             quantiles = torch.cat([q.reshape(-1, horizon, len(levels)) for q in quantiles])
             mean = torch.cat([m.reshape(-1, horizon) for m in mean])
+        # Sort along the quantile axis: the model's heads can cross, and the
+        # TimesFM-3 and classical paths both return non-crossing bands.
+        q = np.sort(quantiles.float().numpy().astype(np.float64), axis=-1)
         return ForecastResult(
             point=mean.float().numpy().astype(np.float64),
-            quantiles=quantiles.float().numpy().astype(np.float64),
+            quantiles=q,
             quantile_levels=DEFAULT_QUANTILES,
         )
 

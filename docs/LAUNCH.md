@@ -24,7 +24,9 @@ migration.
    personal account's ID, shown on the Workers dashboard). Then run the **cloudflare-edge**
    workflow (Actions tab, *Run workflow*). From then on, every push to `main`
    that touches `cloudflare/` deploys. Alternatives: the **Deploy to
-   Cloudflare** button, or `cd cloudflare && npm install && npx wrangler
+   Cloudflare** button (then run `npx wrangler d1 migrations apply
+   timesfm3-credits --remote` once from `cloudflare/`, or Privacy Pass credits
+   fail on a missing table), or `cd cloudflare && npm install && npx wrangler
    deploy && npx wrangler d1 migrations apply timesfm3-credits --remote`. You get
    `timesfm3-edge.<account>.workers.dev`: landing page, JS classical API,
    in-browser TimesFM-3, waitlist in KV. There is no backend to pay for.
