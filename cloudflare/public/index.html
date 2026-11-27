@@ -107,7 +107,22 @@
     <tr><td>last-value</td><td>2.479</td><td class="ref">1.000</td><td>—</td><td>—</td><td>—</td><td class="ref">reference</td></tr>
     <tr><td>drift</td><td>2.488</td><td>1.004</td><td>[0.993, 1.015]</td><td>1.000</td><td>51%</td><td class="nodiff">no difference</td></tr>
   </table></div>
-  <p style="color:var(--muted);font-size:14px;margin-top:12px">Anomaly detection on seasonal data with two planted spikes: the bundled model flags exactly those two with zero false alarms; EWMA misses one and raises five. The 334M <code>base</code> configuration trained on GPU is the roadmap item that closes the forecasting gap — Enterprise customers get it first.</p>
+  <p style="color:var(--muted);font-size:14px;margin-top:12px">Same harness, other models: Chronos-Bolt-tiny beats this starter on ETTh2 (MAE ratio 0.78, significant). The registry serves Chronos next to TimesFM-3, so you can pick the model your own backtest favours instead of the one we ship.</p>
+</div></section>
+
+<section id="volatility"><div class="wrap">
+  <div class="kicker">Volatility, measured</div>
+  <h2>A 1994 formula still beats foundation models at volatility</h2>
+  <p class="lead">Five-day variance forecasts, 2020–2026 FRED daily data, QLIKE loss, every model calibrated on 2015–2019. Used off the shelf, foundation models lose to RiskMetrics. Our fine-tuned model ties RiskMetrics and HAR, but the pre-registered gate required beating everything, so it did not ship. The self-hosted service's <code>/v1/volatility</code> serves the models that held up: RiskMetrics and HAR. (This free edge deployment does not serve volatility.)</p>
+  <div class="card" style="margin-top:20px;overflow-x:auto"><table>
+    <tr><th>model</th><th>QLIKE vs RiskMetrics</th><th>on 11 never-seen assets</th></tr>
+    <tr><td><b>RiskMetrics</b> EWMA λ=0.94 (1994)</td><td class="ref">1.00×</td><td class="ref">1.00×</td></tr>
+    <tr><td>HAR (2009)</td><td>1.09×</td><td>0.97×</td></tr>
+    <tr><td>our TimesFM-3, fine-tuned on QLIKE</td><td>1.03× (tie)</td><td>0.97× (tie)</td></tr>
+    <tr><td>Chronos-Bolt-small, off the shelf</td><td>1.33×</td><td>1.39×</td></tr>
+    <tr><td>Chronos-2, off the shelf</td><td>1.48×</td><td>8.4×</td></tr>
+  </table></div>
+  <p style="color:var(--muted);font-size:14px;margin-top:12px">Lower is better. Corrected 2026-11-27 after automated review found a look-ahead bug in our preprocessing; the earlier and corrected numbers are both published. Protocol, every training run, the erratum and raw results: <a href="https://github.com/0xSoftBoi/googleresearch/blob/main/docs/launch/volatility-benchmark.md" rel="noopener">the write-up</a>.</p>
 </div></section>
 
 <section id="pricing"><div class="wrap">
@@ -144,7 +159,7 @@
   <details><summary>Can you see what I forecast?</summary><p>Not if you pay with Privacy Pass tokens (the IETF standard Cloudflare and Apple ship, RFC 9578). A batch is blind-signed: the service signs tokens it never sees, so a redeemed token cannot be linked to the purchase or to other tokens. Fund the purchase from a <a href="https://privacypools.com" rel="noopener">Privacy Pools</a> withdrawal and the wallet is unlinkable on-chain too. Details and the threat model are in <a href="https://github.com/0xSoftBoi/googleresearch/blob/main/docs/PRIVACY.md">docs/PRIVACY.md</a>.</p></details>
   <details><summary>How good is the bundled model?</summary><p>Small (5.2M parameters, trained on CPU on public data) and honestly benchmarked above: lowest error on held-out data, not yet statistically significant. Run <code>timesfm3 backtest</code> on your series; if the verdict is "no difference", use the free EWMA baseline — we will have told you first. Larger checkpoints are the Enterprise tier.</p></details>
   <details><summary>Does my data leave my perimeter?</summary><p>On this site, never: the dashboard at <a href="/app">/app</a> runs the model in your browser with WebAssembly, and the edge API for classical models keeps nothing. Self-hosted: never. The hosted tiers run the same container behind this Cloudflare edge; requests are metered, not stored.</p></details>
-  <details><summary>What about Chronos, Granite, TimeGPT, BigQuery AI.FORECAST?</summary><p>Chronos and Granite are good Apache-licensed <em>models</em>; this is the service layer around a model, and the registry can serve other checkpoints. TimeGPT starts around $12k/month and is closed. BigQuery needs your data in BigQuery. See the <a href="https://github.com/0xSoftBoi/googleresearch/blob/main/docs/BUSINESS.md">market map</a>.</p></details>
+  <details><summary>What about Chronos, Toto, Granite, Kronos, TimeGPT, BigQuery AI.FORECAST?</summary><p>Chronos, Toto and Granite are good Apache-licensed <em>models</em>; Kronos is an open finance-native model. This is the service layer around a model — metering, payments, an honest backtest — and it already serves Amazon’s Chronos family alongside our own. On our own benchmark panel Chronos-Bolt beats our bundled starter by about 20%, and we publish that: <a href="https://github.com/0xSoftBoi/googleresearch/blob/main/docs/VERIFICATION.md">the reproducible numbers</a>. TimeGPT starts around $12k/month and is closed. Commercial TimesFM-3 exists only inside BigQuery, in Preview, with your data in BigQuery. See the <a href="https://github.com/0xSoftBoi/googleresearch/blob/main/docs/BUSINESS.md">market map</a>.</p></details>
 </div></section>
 
 <footer><div class="wrap">TimesFM-3 Forecast Service · <a href="/docs">API docs</a> · <a href="/app">dashboard</a> · <a href="https://github.com/0xSoftBoi/googleresearch">source</a> · served from Cloudflare's free tier <span id="colo"></span> · nothing here is investment advice.</div></footer>

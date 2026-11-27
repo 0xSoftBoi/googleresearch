@@ -10,6 +10,7 @@ import json
 import shutil
 import subprocess
 import time
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -147,7 +148,13 @@ def test_pricing_endpoint_and_env_config(paid_client, monkeypatch):
 node = shutil.which("node")
 
 
-@pytest.mark.skipif(node is None, reason="node not installed")
+CLOUDFLARE_DIR = Path(__file__).resolve().parent.parent / "cloudflare"
+
+
+@pytest.mark.skipif(
+    node is None or not (CLOUDFLARE_DIR / "node_modules").is_dir(),
+    reason="node or cloudflare/node_modules (npm install) not available",
+)
 def test_worker_x402_flow_matches_spec():
     script = r"""
 import app from './src/index.js';
@@ -184,7 +191,7 @@ const r5 = await app.fetch(new Request('https://edge.test/v1/models'), env, ctx)
 out.freeGet = r5.status;
 console.log(JSON.stringify(out));
 """
-    res = subprocess.run([node, "--input-type=module", "-e", script], capture_output=True, text=True, cwd="/home/user/googleresearch/cloudflare")
+    res = subprocess.run([node, "--input-type=module", "-e", script], capture_output=True, text=True, cwd=CLOUDFLARE_DIR)
     assert res.returncode == 0, res.stderr
     out = json.loads(res.stdout.strip().splitlines()[-1])
     assert out["challenge"]["status"] == 402

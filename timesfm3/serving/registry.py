@@ -127,7 +127,7 @@ class ModelEntry:
         past_covariates: Sequence[np.ndarray] = (),
         future_covariates: Sequence[np.ndarray] = (),
     ) -> ForecastResult:
-        if self.kind == "timesfm3":
+        if self._forecaster is not None:
             return self._forecaster.forecast(  # type: ignore[attr-defined]
                 targets=[np.asarray(t, dtype=np.float32) for t in targets],
                 horizon=horizon,
@@ -217,21 +217,34 @@ class ModelRegistry:
             _forecaster=forecaster,
         )
         self._entries[name] = entry
-        if make_default or self.default is None or self._entries[self.default].kind != "timesfm3":
+        if make_default or self.default is None or self._entries[self.default]._forecaster is None:
             self.default = name
         return entry
 
-    def add_forecaster(self, name: str, forecaster, description: str = "") -> ModelEntry:
-        """Registers an in-memory :class:`TimesFM3Forecaster` (tests, notebooks)."""
+    def add_forecaster(
+        self, name: str, forecaster, description: str = "",
+        kind: str = "timesfm3", supports_covariates: bool = True,
+    ) -> ModelEntry:
+        """Registers any object exposing ``.model`` (a ``torch.nn.Module``, for
+        the parameter count) and ``.forecast(targets, horizon, past_covariates,
+        future_covariates) -> ForecastResult``.
+
+        Used for in-memory :class:`TimesFM3Forecaster` instances (tests,
+        notebooks) and for adapters wrapping another vendor's foundation model
+        (see :mod:`timesfm3.serving.adapters`) — the contract is the same
+        either way, so a competitor's checkpoint is a thin adapter, not a fork
+        of the serving stack. ``kind`` is metadata only (reported by
+        ``GET /v1/models``); it does not change dispatch.
+        """
         params = sum(p.numel() for p in forecaster.model.parameters())
         entry = ModelEntry(
-            name=name, kind="timesfm3",
-            description=description or "In-memory TimesFM-3 forecaster.",
-            parameters=int(params), supports_covariates=True,
+            name=name, kind=kind,
+            description=description or "In-memory forecaster.",
+            parameters=int(params), supports_covariates=supports_covariates,
             _forecaster=forecaster,
         )
         self._entries[name] = entry
-        if self.default is None or self._entries[self.default].kind != "timesfm3":
+        if self.default is None or self._entries[self.default]._forecaster is None:
             self.default = name
         return entry
 
@@ -244,11 +257,17 @@ class ModelRegistry:
         default: str | None = None,
     ) -> "ModelRegistry":
         """Registry from explicit paths, ``TIMESFM3_CHECKPOINTS``,
-        ``TIMESFM3_MODEL_DIR`` and the bundled starter checkpoint.
+        ``TIMESFM3_MODEL_DIR``, ``TIMESFM3_CHRONOS_MODELS`` and the bundled
+        starter checkpoint.
 
         ``checkpoints`` entries may be ``path`` or ``name=path``.  The last
         checkpoint added becomes the default unless ``TIMESFM3_DEFAULT_MODEL``
-        or ``default`` names one.
+        or ``default`` names one. ``TIMESFM3_CHRONOS_MODELS`` is a
+        comma-separated list of ``model_id`` or ``name=model_id`` (e.g.
+        ``amazon/chronos-bolt-tiny``) served alongside TimesFM-3 through
+        :func:`timesfm3.serving.adapters.add_chronos`; it requires the
+        optional ``chronos-forecasting`` package and network access to fetch
+        the weights on first use.
         """
         reg = cls()
         specs: list[str] = list(checkpoints)
@@ -262,6 +281,17 @@ class ModelRegistry:
         for spec in specs:
             name, _, path = spec.partition("=") if "=" in spec else (None, None, spec)
             reg.add_checkpoint(path.strip(), name=(name or "").strip() or None, device=device)
+        chronos_env = os.environ.get("TIMESFM3_CHRONOS_MODELS", "")
+        chronos_specs = [s for s in chronos_env.split(",") if s.strip()]
+        if chronos_specs:
+            from .adapters import add_chronos
+
+            for spec in chronos_specs:
+                name, _, model_id = spec.partition("=") if "=" in spec else (None, None, spec)
+                add_chronos(
+                    reg, model_id.strip(), name=(name or "").strip() or None,
+                    device=device or "cpu",
+                )
         chosen = default or os.environ.get("TIMESFM3_DEFAULT_MODEL")
         if chosen:
             if chosen not in reg._entries:

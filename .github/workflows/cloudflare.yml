@@ -2,35 +2,45 @@ name: cloudflare-edge
 on:
   push:
     branches: [main]
-    paths: ["cloudflare/**"]
+    paths: ["cloudflare/**", ".github/workflows/cloudflare.yml"]
   workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # Set CLOUDFLARE_API_TOKEN (Workers Scripts:Edit, Workers KV Storage:Edit)
-    # and CLOUDFLARE_ACCOUNT_ID as repository secrets to enable this job.
-    if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+    # Set CLOUDFLARE_API_TOKEN (Workers Scripts:Edit, Workers KV Storage:Edit,
+    # D1:Edit) and CLOUDFLARE_ACCOUNT_ID as repository secrets to enable this
+    # job. Without both, every step is skipped and the job passes.
+    # (`secrets` is not allowed in a job-level `if`, so the check is per step.)
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     defaults:
       run:
         working-directory: cloudflare
     steps:
+      - name: Credentials missing, skipping deploy
+        if: ${{ env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == '' }}
+        working-directory: .
+        run: echo "::notice::CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID must both be set; deploy skipped."
       - uses: actions/checkout@v4
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
       - uses: actions/setup-node@v4
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: cloudflare/package-lock.json
-      - run: npm ci
+      - if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
+        run: npm ci
       - name: Deploy Worker
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
         run: npx wrangler deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Apply D1 migrations (Privacy Pass ledger)
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
+        run: npx wrangler d1 migrations apply timesfm3-credits --remote
       - name: Smoke
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
         run: |
           URL=$(npx wrangler deployments list --json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0].get('url','') if d else '')" || true)
           echo "deployed: ${URL:-see wrangler output}"
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

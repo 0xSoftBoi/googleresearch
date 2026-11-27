@@ -10,6 +10,10 @@ Google Research's
 architecture, with a bundled pre-trained starter model (5.2 M parameters,
 trained on public benchmark data) so it works out of the box on CPU.
 
+> **Benchmark:** [A 1994 formula still beats time-series foundation models at
+> volatility](docs/launch/volatility-benchmark.md). Two attempts, pre-registered,
+> losing rows published.
+
 ```bash
 pip install "timesfm3[serve] @ git+https://github.com/0xSoftBoi/googleresearch"
 timesfm3 serve                      # dashboard http://localhost:8000  docs /docs
@@ -42,6 +46,10 @@ docker compose up --build                                    # same thing, conta
 The full product guide — API reference, configuration, deployment, model
 card, limits — is in [docs/PRODUCT.md](docs/PRODUCT.md). The competitive
 research, positioning and pricing model are in [docs/BUSINESS.md](docs/BUSINESS.md).
+Every measured number and every external citation in these documents was
+independently re-run or re-fetched on 2026-09-04; the claim-by-claim ledger,
+with the commands that reproduce each figure and the corrections that audit
+forced, is [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
 ![Dashboard](docs/dashboard.png)
 
@@ -72,7 +80,7 @@ supports:
 | Alternating attention | A 2D grid of tokens (series × time). **Temporal attention** is strictly causal within each series; **cross-variate attention** lets a token attend to every other series at the same time step | `timesfm3/attention.py`, `timesfm3/blocks.py` |
 | Decoding | **Contiguous Patch Masking**: target and past-only covariate patches are masked over the horizon while past–future covariates remain visible, and the whole horizon is produced in one forward pass. Horizons beyond the single-pass maximum roll forward chunk by chunk | `timesfm3/model.py`, `timesfm3/forecaster.py` |
 | Output | **9 quantiles (q10 … q90, median at index 4)** plus a point forecast for every target at every horizon step, with optional quantile-crossing repair | `timesfm3/model.py`, `timesfm3/forecaster.py` |
-| Scale | Base config matches the released TimesFM-3 dimensions — 20 layers, model dim 1280, 16 heads — at ~334 M parameters (`small` and `tiny` configs included for experimentation) | `timesfm3/configuration.py` |
+| Scale | Base config matches the released TimesFM-3 dimensions — 20 layers, model dim 1280, 16 heads (per Google's model card) — at ≈334 M parameters as configured here (Google states "330 million" / "0.3B"; the difference is in embedding/head details this code does not know). `small` and `tiny` configs included for experimentation | `timesfm3/configuration.py` |
 
 A detailed walkthrough of the token grid, attention layout, and known
 deviations from the released model lives in [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -374,9 +382,11 @@ python -m timesfm3.train --config tiny --steps 600 --batch-size 16 \
 python examples/plot_forecast.py --checkpoint timesfm3_checkpoint.pt
 ```
 
-The tiny (1M parameter) config trains in ~25 minutes on CPU with held-out
-validation and best-checkpoint saving. After 8000 steps (best validation
-loss 1.405), scaled MAE against naive baselines:
+The tiny (1M parameter) config trains in ~7–25 minutes on CPU (7 min on
+4 idle cores) with held-out validation and best-checkpoint saving. After
+8000 steps, scaled MAE against naive baselines (2026-08-31 run; a from-scratch
+re-run on 2026-09-04 gave 0.91 and 0.89 for the model with identical
+baselines — see `docs/VERIFICATION.md`):
 
 | Evaluation | model | last-value | seasonal-naive | context-mean |
 |---|---|---|---|---|

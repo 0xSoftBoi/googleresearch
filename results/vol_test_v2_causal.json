@@ -1,0 +1,885 @@
+{
+  "candidate": "data/vol/v2b.pt",
+  "candidate_name": "timesfm3-vol-small-v2",
+  "holdout_assets": [
+    "BRLUSD",
+    "BTCUSD",
+    "DJIA",
+    "DKKUSD",
+    "ETHUSD",
+    "KRWUSD",
+    "LTCUSD",
+    "NASDAQ100",
+    "SGDUSD",
+    "UST5Y",
+    "ZARUSD"
+  ],
+  "test_dates": [
+    "2020-01-01",
+    "2026-11-15",
+    2511
+  ],
+  "test_forecasts": 21410,
+  "calibration_fit_on_validation": {
+    "riskmetrics": [
+      1.252207847587389,
+      1.2969840924647311
+    ],
+    "har": [
+      1.1170945852031147,
+      1.1195147035891977
+    ],
+    "har-log": [
+      0.08829625601783815,
+      0.08457361784247487
+    ],
+    "har-iv": [
+      1.1368861701273736,
+      1.1346300785134094
+    ],
+    "iv-or-riskmetrics": [
+      1.198953593502291,
+      1.243356855089886
+    ],
+    "starter-small": [
+      1430.3114391550132,
+      73.01392136372905
+    ],
+    "timesfm3-vol-v1": [
+      1.0170361909227394,
+      0.9638113350417784
+    ],
+    "chronos-bolt-tiny": [
+      153.81685745971703,
+      6.850885278784264
+    ],
+    "chronos-bolt-small": [
+      106.76503075023217,
+      6.529970796572131
+    ],
+    "chronos-2": [
+      21441.610238607405,
+      396.4947049336519
+    ],
+    "timesfm3-vol-small-v2": [
+      1.0051015675084165,
+      0.9532639781256445
+    ]
+  },
+  "vs_candidate": {
+    "1d": {
+      "riskmetrics": {
+        "mean_qlike": 1.7017676509660695,
+        "ratio_vs_reference": 0.9978643466479595,
+        "ci": [
+          0.9888860154001302,
+          1.0064533900032395
+        ],
+        "p_holm": 1.0,
+        "p_raw": 0.6645160560592944,
+        "n_dates": 2511,
+        "n_effective": 2408.084928370751,
+        "verdict": "no difference"
+      },
+      "iv-or-riskmetrics": {
+        "mean_qlike": 1.7049924894269808,
+        "ratio_vs_reference": 0.9997552929954328,
+        "ci": [
+          0.991452641247802,
+          1.007895177537806
+        ],
+        "p_holm": 1.0,
+        "p_raw": 0.9559459665371149,
+        "n_dates": 2511,
+        "n_effective": 2440.8795931873565,
+        "verdict": "no difference"
+      },
+      "timesfm3-vol-v1": {
+        "mean_qlike": 1.7069623198952695,
+        "ratio_vs_reference": 1.0009103411549922,
+        "ci": [
+          1.0002136293745294,
+          1.0016464123057847
+        ],
+        "p_holm": 0.07776671754495763,
+        "p_raw": 0.015553343508991527,
+        "n_dates": 2511,
+        "n_effective": 2511.0,
+        "verdict": "no difference"
+      },
+      "har": {
+        "mean_qlike": 1.7158834636283609,
+        "ratio_vs_reference": 1.0061414261726913,
+        "ci": [
+          0.9947595949588393,
+          1.0174994600662266
+        ],
+        "p_holm": 0.8857313597366114,
+        "p_raw": 0.29524378657887046,
+        "n_dates": 2511,
+        "n_effective": 2293.50444301359,
+        "verdict": "no difference"
+      },
+      "har-iv": {
+        "mean_qlike": 1.723833643738589,
+        "ratio_vs_reference": 1.0108031679074827,
+        "ci": [
+          0.9981938494584309,
+          1.0240706249477012
+        ],
+        "p_holm": 0.326046132129542,
+        "p_raw": 0.0815115330323855,
+        "n_dates": 2511,
+        "n_effective": 2441.331889471219,
+        "verdict": "no difference"
+      },
+      "har-log": {
+        "mean_qlike": 2.7627965532226555,
+        "ratio_vs_reference": 1.6200191465255016,
+        "ci": [
+          1.5413685323182336,
+          1.701596241600414
+        ],
+        "p_holm": 4.4720973713200136e-24,
+        "p_raw": 7.45349561886669e-25,
+        "n_dates": 2511,
+        "n_effective": 1218.3480311252433,
+        "verdict": "worse"
+      },
+      "chronos-bolt-small": {
+        "mean_qlike": 4.163162792054828,
+        "ratio_vs_reference": 2.4411509509682854,
+        "ci": [
+          2.3653745477082535,
+          2.5144684362187784
+        ],
+        "p_holm": 0.0,
+        "p_raw": 0.0,
+        "n_dates": 2511,
+        "n_effective": 1263.114213712352,
+        "verdict": "worse"
+      },
+      "chronos-bolt-tiny": {
+        "mean_qlike": 4.5114059193674425,
+        "ratio_vs_reference": 2.6453500380253074,
+        "ci": [
+          2.5635646221579815,
+          2.7252718947107732
+        ],
+        "p_holm": 0.0,
+        "p_raw": 0.0,
+        "n_dates": 2511,
+        "n_effective": 1434.7070731148478,
+        "verdict": "worse"
+      },
+      "starter-small": {
+        "mean_qlike": 6.2160046497622226,
+        "ratio_vs_reference": 3.6448744428033146,
+        "ci": [
+          3.5308401241718705,
+          3.7554297903713336
+        ],
+        "p_holm": 0.0,
+        "p_raw": 0.0,
+        "n_dates": 2511,
+        "n_effective": 2511.0,
+        "verdict": "worse"
+      },
+      "chronos-2": {
+        "mean_qlike": 9.421043481614513,
+        "ratio_vs_reference": 5.5242108951750915,
+        "ci": [
+          5.347789481753007,
+          5.692965892986623
+        ],
+        "p_holm": 0.0,
+        "p_raw": 0.0,
+        "n_dates": 2511,
+        "n_effective": 1386.061702177886,
+        "verdict": "worse"
+      },
+      "_reference_mean_qlike": 1.7054098151544068
+    },
+    "5d": {
+      "har": {
+        "mean_qlike": 0.4858784161610978,
+        "ratio_vs_reference": 0.9990715766600023,
+        "ci": [
+          0.9755356515228963,
+          1.0234569151743127
+        ],
+        "p_holm": 0.9610871813687611,
+        "p_raw": 0.9610871813687611,
+        "n_dates": 2511,
+        "n_effective": 986.8911527603572,
+        "verdict": "no difference"
+      },
+      "timesfm3-vol-v1": {
+        "mean_qlike": 0.4873582228684501,
+        "ratio_vs_reference": 1.0021143807259816,
+        "ci": [
+          1.000666162147975,
+          1.003629776119956
+        ],
+        "p_holm": 0.3739576950393067,
+        "p_raw": 0.07479153900786134,
+        "n_dates": 2511,
+        "n_effective": 862.7362199992638,
+        "verdict": "no difference"
+      },
+      "har-iv": {
+        "mean_qlike": 0.49412656240782643,
+        "ratio_vs_reference": 1.0160315571842438,
+        "ci": [
+          0.9874752324457614,
+          1.0461522808649988
+        ],
+        "p_holm": 0.9600050026515714,
+        "p_raw": 0.4800025013257857,
+        "n_dates": 2511,
+        "n_effective": 949.3636581384822,
+        "verdict": "no difference"
+      },
+      "riskmetrics": {
+        "mean_qlike": 0.49939339817963035,
+        "ratio_vs_reference": 1.0268613157072088,
+        "ci": [
+          1.0017327350441512,
+          1.0524664502306285
+        ],
+        "p_holm": 0.6733883254633446,
+        "p_raw": 0.22446277515444818,
+        "n_dates": 2511,
+        "n_effective": 758.4866243982525,
+        "verdict": "no difference"
+      },
+      "iv-or-riskmetrics": {
+        "mean_qlike": 0.5048082884356612,
+        "ratio_vs_reference": 1.0379955064133461,
+        "ci": [
+          1.0122643886832665,
+          1.065166225142411
+        ],
+        "p_holm": 0.3739576950393067,
+        "p_raw": 0.07896507631427524,
+        "n_dates": 2511,
+        "n_effective": 820.748174117694,
+        "verdict": "no difference"
+      },
+      "chronos-bolt-small": {
+        "mean_qlike": 0.6928722167801539,
+        "ratio_vs_reference": 1.4246957984092545,
+        "ci": [
+          1.3573049318916368,
+          1.4935573260429873
+        ],
+        "p_holm": 1.0085066323674057e-19,
+        "p_raw": 1.4407237605248652e-20,
+        "n_dates": 2511,
+        "n_effective": 453.16400197937014,
+        "verdict": "worse"
+      },
+      "chronos-bolt-tiny": {
+        "mean_qlike": 0.7021035240332033,
+        "ratio_vs_reference": 1.4436773715460187,
+        "ci": [
+          1.3684679936378825,
+          1.518378212802112
+        ],
+        "p_holm": 3.3315563184072835e-18,
+        "p_raw": 5.552593864012139e-19,
+        "n_dates": 2511,
+        "n_effective": 472.5974513882093,
+        "verdict": "worse"
+      },
+      "har-log": {
+        "mean_qlike": 1.7187352204035675,
+        "ratio_vs_reference": 3.534092994038933,
+        "ci": [
+          3.3762897294461265,
+          3.704851580260929
+        ],
+        "p_holm": 5.3587354310924186e-20,
+        "p_raw": 6.698419288865523e-21,
+        "n_dates": 2511,
+        "n_effective": 426.45489544393547,
+        "verdict": "worse"
+      },
+      "starter-small": {
+        "mean_qlike": 2.078099779591279,
+        "ratio_vs_reference": 4.273024596681585,
+        "ci": [
+          3.9731935816951007,
+          4.57338115327631
+        ],
+        "p_holm": 6.961396623552237e-308,
+        "p_raw": 7.734885137280264e-309,
+        "n_dates": 2511,
+        "n_effective": 540.9306143303721,
+        "verdict": "worse"
+      },
+      "chronos-2": {
+        "mean_qlike": 4.212796341433962,
+        "ratio_vs_reference": 8.66242447285088,
+        "ci": [
+          8.052639593977004,
+          9.279219910341249
+        ],
+        "p_holm": 0.0,
+        "p_raw": 0.0,
+        "n_dates": 2511,
+        "n_effective": 442.30282018209346,
+        "verdict": "worse"
+      },
+      "_reference_mean_qlike": 0.4863299362248285
+    }
+  },
+  "vs_riskmetrics": {
+    "1d": {
+      "iv-or-riskmetrics": {
+        "mean_qlike": 1.7049924894269808,
+        "ratio_vs_reference": 1.0018949933964725,
+        "ci": [
+          0.9989927715786332,
+          1.0046258933707692
+        ],
+        "p_holm": 0.8483818430629038,
+        "p_raw": 0.2827939476876346,
+        "n_dates": 2511,
+        "n_effective": 2511.0,
+        "verdict": "no difference"
+      },
+      "timesfm3-vol-small-v2": {
+        "mean_qlike": 1.7054098151544068,
+        "ratio_vs_reference": 1.0021402241288755,
+        "ci": [
+          0.9935879892529537,
+          1.0112388934943308
+        ],
+        "p_holm": 1.0,
+        "p_raw": 0.6645160560592944,
+        "n_dates": 2511,
+        "n_effective": 2408.084928370751,
+        "verdict": "no difference"
+      },
+      "timesfm3-vol-v1": {
+        "mean_qlike": 1.7069623198952695,
+        "ratio_vs_reference": 1.003052513617973,
+        "ci": [
+          0.9946871634800091,
+          1.011896567776439
+        ],
+        "p_holm": 1.0,
+        "p_raw": 0.5312600204475386,
+        "n_dates": 2511,
+        "n_effective": 2379.004872244551,
+        "verdict": "no difference"
+      },
+      "har": {
+        "mean_qlike": 1.7158834636283609,
+        "ratio_vs_reference": 1.0082947943300473,
+        "ci": [
+          0.9970606604217701,
+          1.0201900401520578
+        ],
+        "p_holm": 0.7316525970079442,
+        "p_raw": 0.18291314925198604,
+        "n_dates": 2511,
+        "n_effective": 2244.161979758762,
+        "verdict": "no difference"
+      },
+      "har-iv": {
+        "mean_qlike": 1.723833643738589,
+        "ratio_vs_reference": 1.012966513236982,
+        "ci": [
+          1.0000890722364235,
+          1.0262799166559384
+        ],
+        "p_holm": 0.3074415754245429,
+        "p_raw": 0.06148831508490859,
+        "n_dates": 2511,
+        "n_effective": 2261.6889953652226,
+        "verdict": "no difference"
+      },
+      "har-log": {
+        "mean_qlike": 2.7627965532226555,
+        "ratio_vs_reference": 1.6234863505921358,
+        "ci": [
+          1.5377227339932733,
+          1.7126178528790514
+        ],
+        "p_holm": 1.442139507234303e-22,
+        "p_raw": 2.403565845390505e-23,
+        "n_dates": 2511,
+        "n_effective": 1276.23800272637,
+        "verdict": "worse"
+      },
+      "chronos-bolt-small": {
+        "mean_qlike": 4.163162792054828,
+        "ratio_vs_reference": 2.446375561135775,
+        "ci": [
+          2.3816991284389215,
+          2.511014767722048
+        ],
+        "p_holm": 0.0,
+        "p_raw": 0.0,
+        "n_dates": 2511,
+        "n_effective": 1128.8184784786545,
+        "verdict": "worse"
+      },
+      "chronos-bolt-tiny": {
+        "mean_qlike": 4.5114059193674425,
+        "ratio_vs_reference": 2.6510116800060106,
+        "ci": [
+          2.580815196854565,
+          2.720145507237566
+        ],
+        "p_holm": 0.0,
+        "p_raw": 0.0,
+        "n_dates": 2511,
+        "n_effective": 1269.3258682935107,
+        "verdict": "worse"
+      },
+      "starter-small": {
+        "mean_qlike": 6.2160046497622226,
+        "ratio_vs_reference": 3.6526752910325238,
+        "ci": [
+          3.5525139948866626,
+          3.752575573847592
+        ],
+        "p_holm": 0.0,
+        "p_raw": 0.0,
+        "n_dates": 2511,
+        "n_effective": 2511.0,
+        "verdict": "worse"
+      },
+      "chronos-2": {
+        "mean_qlike": 9.421043481614513,
+        "ratio_vs_reference": 5.536033944625942,
+        "ci": [
+          5.3816526536412885,
+          5.691419293887483
+        ],
+        "p_holm": 0.0,
+        "p_raw": 0.0,
+        "n_dates": 2511,
+        "n_effective": 1236.722959629878,
+        "verdict": "worse"
+      },
+      "_reference_mean_qlike": 1.7017676509660695
+    },
+    "5d": {
+      "har": {
+        "mean_qlike": 0.4858784161610978,
+        "ratio_vs_reference": 0.9729372032794249,
+        "ci": [
+          0.944764622240407,
+          0.9980946976979588
+        ],
+        "p_holm": 0.8978511006177927,
+        "p_raw": 0.28426756549008314,
+        "n_dates": 2511,
+        "n_effective": 710.9283891497911,
+        "verdict": "no difference"
+      },
+      "timesfm3-vol-small-v2": {
+        "mean_qlike": 0.4863299362248285,
+        "ratio_vs_reference": 0.9738413403092226,
+        "ci": [
+          0.9501490528146679,
+          0.9982702621350424
+        ],
+        "p_holm": 0.8978511006177927,
+        "p_raw": 0.22446277515444818,
+        "n_dates": 2511,
+        "n_effective": 758.4866243982525,
+        "verdict": "no difference"
+      },
+      "timesfm3-vol-v1": {
+        "mean_qlike": 0.4873582228684501,
+        "ratio_vs_reference": 0.9759004116693364,
+        "ci": [
+          0.9524988757219867,
+          0.9999051214019224
+        ],
+        "p_holm": 0.8978511006177927,
+        "p_raw": 0.26418725888872807,
+        "n_dates": 2511,
+        "n_effective": 734.1750386727259,
+        "verdict": "no difference"
+      },
+      "har-iv": {
+        "mean_qlike": 0.49412656240782643,
+        "ratio_vs_reference": 0.9894535334447704,
+        "ci": [
+          0.957537687407696,
+          1.0189858867218298
+        ],
+        "p_holm": 0.8978511006177927,
+        "p_raw": 0.6997468943628072,
+        "n_dates": 2511,
+        "n_effective": 732.5264950135786,
+        "verdict": "no difference"
+      },
+      "iv-or-riskmetrics": {
+        "mean_qlike": 0.5048082884356612,
+        "ratio_vs_reference": 1.0108429352005233,
+        "ci": [
+          1.0034612113820243,
+          1.0197017020004222
+        ],
+        "p_holm": 0.5662371942792653,
+        "p_raw": 0.11324743885585306,
+        "n_dates": 2511,
+        "n_effective": 729.3343507760591,
+        "verdict": "no difference"
+      },
+      "chronos-bolt-small": {
+        "mean_qlike": 0.6928722167801539,
+        "ratio_vs_reference": 1.3874276658557865,
+        "ci": [
+          1.3339230369720616,
+          1.4424242184194662
+        ],
+        "p_holm": 2.8086752445159763e-24,
+        "p_raw": 3.5108440556449704e-25,
+        "n_dates": 2511,
+        "n_effective": 381.22332040678566,
+        "verdict": "worse"
+      },
+      "chronos-bolt-tiny": {
+        "mean_qlike": 0.7021035240332033,
+        "ratio_vs_reference": 1.4059127064804704,
+        "ci": [
+          1.3477577944428174,
+          1.465574428425173
+        ],
+        "p_holm": 1.2433775270648721e-23,
+        "p_raw": 1.7762536100926744e-24,
+        "n_dates": 2511,
+        "n_effective": 398.5251699378761,
+        "verdict": "worse"
+      },
+      "har-log": {
+        "mean_qlike": 1.7187352204035675,
+        "ratio_vs_reference": 3.4416458580923077,
+        "ci": [
+          3.2664013054941052,
+          3.62087854991182
+        ],
+        "p_holm": 3.624830548771993e-18,
+        "p_raw": 6.041384247953322e-19,
+        "n_dates": 2511,
+        "n_effective": 426.974957279659,
+        "verdict": "worse"
+      },
+      "starter-small": {
+        "mean_qlike": 2.078099779591279,
+        "ratio_vs_reference": 4.161248000406671,
+        "ci": [
+          3.9067711602124824,
+          4.412552387374071
+        ],
+        "p_holm": 0.0,
+        "p_raw": 0.0,
+        "n_dates": 2511,
+        "n_effective": 497.2898219844853,
+        "verdict": "worse"
+      },
+      "chronos-2": {
+        "mean_qlike": 4.212796341433962,
+        "ratio_vs_reference": 8.435827058968512,
+        "ci": [
+          7.920464569367644,
+          8.937685745816541
+        ],
+        "p_holm": 0.0,
+        "p_raw": 0.0,
+        "n_dates": 2511,
+        "n_effective": 428.6467519503571,
+        "verdict": "worse"
+      },
+      "_reference_mean_qlike": 0.49939339817963035
+    }
+  },
+  "holdout_with_implied_vol_vs_candidate": {
+    "1d": {
+      "timesfm3-vol-v1": {
+        "mean_qlike": 1.5808306951287576,
+        "ratio_vs_reference": 1.0067865943445466,
+        "ci": [
+          1.001717108555349,
+          1.0124273220785944
+        ],
+        "p_holm": 0.2005554057622346,
+        "p_raw": 0.05013885144055865,
+        "n_dates": 1735,
+        "n_effective": 881.957451232177,
+        "verdict": "no difference"
+      },
+      "riskmetrics": {
+        "mean_qlike": 1.5820897873565316,
+        "ratio_vs_reference": 1.0075884747608825,
+        "ci": [
+          0.99311239830652,
+          1.0233062205540076
+        ],
+        "p_holm": 0.7380145372611076,
+        "p_raw": 0.3919684820122939,
+        "n_dates": 1735,
+        "n_effective": 1437.958123233319,
+        "verdict": "no difference"
+      },
+      "har": {
+        "mean_qlike": 1.591193894450147,
+        "ratio_vs_reference": 1.0133866244321743,
+        "ci": [
+          0.9890516099630122,
+          1.0419193079828555
+        ],
+        "p_holm": 0.7380145372611076,
+        "p_raw": 0.3690072686305538,
+        "n_dates": 1735,
+        "n_effective": 1522.3608999704525,
+        "verdict": "no difference"
+      },
+      "iv-or-riskmetrics": {
+        "mean_qlike": 1.6299835813739396,
+        "ratio_vs_reference": 1.0380906847177167,
+        "ci": [
+          1.0179860214242453,
+          1.0569564682046622
+        ],
+        "p_holm": 0.0047490986947830195,
+        "p_raw": 0.0009498197389566039,
+        "n_dates": 1735,
+        "n_effective": 930.692996259068,
+        "verdict": "worse"
+      },
+      "har-iv": {
+        "mean_qlike": 1.646918227133923,
+        "ratio_vs_reference": 1.0488758841597963,
+        "ci": [
+          0.9970435034409882,
+          1.1067737692583464
+        ],
+        "p_holm": 0.26349517370627773,
+        "p_raw": 0.08783172456875923,
+        "n_dates": 1735,
+        "n_effective": 1735.0,
+        "verdict": "no difference"
+      },
+      "har-log": {
+        "mean_qlike": 2.7529875347517345,
+        "ratio_vs_reference": 1.753300307823247,
+        "ci": [
+          1.558644699745004,
+          1.9877212469354602
+        ],
+        "p_holm": 0.00022887615115425812,
+        "p_raw": 3.814602519237635e-05,
+        "n_dates": 1735,
+        "n_effective": 540.1292336699872,
+        "verdict": "worse"
+      },
+      "chronos-bolt-small": {
+        "mean_qlike": 4.136896219608742,
+        "ratio_vs_reference": 2.6346728140659494,
+        "ci": [
+          2.531622516558671,
+          2.736975953304782
+        ],
+        "p_holm": 0.0,
+        "p_raw": 0.0,
+        "n_dates": 1735,
+        "n_effective": 428.94756786093893,
+        "verdict": "worse"
+      },
+      "chronos-bolt-tiny": {
+        "mean_qlike": 4.492010820402817,
+        "ratio_vs_reference": 2.8608353124518824,
+        "ci": [
+          2.7458981616972333,
+          2.9732663298711683
+        ],
+        "p_holm": 0.0,
+        "p_raw": 0.0,
+        "n_dates": 1735,
+        "n_effective": 647.3516531004535,
+        "verdict": "worse"
+      },
+      "starter-small": {
+        "mean_qlike": 6.258683049240723,
+        "ratio_vs_reference": 3.985979151115727,
+        "ci": [
+          3.818230738262387,
+          4.156870448054956
+        ],
+        "p_holm": 0.0,
+        "p_raw": 0.0,
+        "n_dates": 1735,
+        "n_effective": 1735.0,
+        "verdict": "worse"
+      },
+      "chronos-2": {
+        "mean_qlike": 9.39027154889285,
+        "ratio_vs_reference": 5.980399761854511,
+        "ci": [
+          5.718284789856363,
+          6.252704097808494
+        ],
+        "p_holm": 0.0,
+        "p_raw": 0.0,
+        "n_dates": 1735,
+        "n_effective": 748.9753466508632,
+        "verdict": "worse"
+      },
+      "_reference_mean_qlike": 1.5701745573578418
+    },
+    "5d": {
+      "timesfm3-vol-v1": {
+        "mean_qlike": 0.4386854224405772,
+        "ratio_vs_reference": 1.0326513298901137,
+        "ci": [
+          1.022234234909425,
+          1.0426328484188296
+        ],
+        "p_holm": 0.0629051287133147,
+        "p_raw": 0.015726282178328676,
+        "n_dates": 1735,
+        "n_effective": 242.4786923091002,
+        "verdict": "no difference"
+      },
+      "har": {
+        "mean_qlike": 0.440342969321807,
+        "ratio_vs_reference": 1.0365531417664566,
+        "ci": [
+          0.9969936536975934,
+          1.0744877204181453
+        ],
+        "p_holm": 0.36855116325229753,
+        "p_raw": 0.36855116325229753,
+        "n_dates": 1735,
+        "n_effective": 284.95952249322795,
+        "verdict": "no difference"
+      },
+      "riskmetrics": {
+        "mean_qlike": 0.4523546995473812,
+        "ratio_vs_reference": 1.0648283671494034,
+        "ci": [
+          1.0261949803585921,
+          1.1045584386432683
+        ],
+        "p_holm": 0.2856124544345331,
+        "p_raw": 0.10866808099438705,
+        "n_dates": 1735,
+        "n_effective": 266.39899439644694,
+        "verdict": "no difference"
+      },
+      "har-iv": {
+        "mean_qlike": 0.5022614111553784,
+        "ratio_vs_reference": 1.1823071559947782,
+        "ci": [
+          1.0645966665320796,
+          1.334023186337373
+        ],
+        "p_holm": 0.2856124544345331,
+        "p_raw": 0.0952041514781777,
+        "n_dates": 1735,
+        "n_effective": 607.8345180290692,
+        "verdict": "no difference"
+      },
+      "iv-or-riskmetrics": {
+        "mean_qlike": 0.5055446929443065,
+        "ratio_vs_reference": 1.1900358953882098,
+        "ci": [
+          1.1140136319522345,
+          1.2816008060451143
+        ],
+        "p_holm": 0.01865106394059885,
+        "p_raw": 0.0037302127881197705,
+        "n_dates": 1735,
+        "n_effective": 286.27070396055075,
+        "verdict": "worse"
+      },
+      "chronos-bolt-small": {
+        "mean_qlike": 0.6941991654589613,
+        "ratio_vs_reference": 1.6341224366007003,
+        "ci": [
+          1.5312324472544205,
+          1.733301586065228
+        ],
+        "p_holm": 3.4573793751930695e-19,
+        "p_raw": 4.9391133931329566e-20,
+        "n_dates": 1735,
+        "n_effective": 180.40817051269423,
+        "verdict": "worse"
+      },
+      "chronos-bolt-tiny": {
+        "mean_qlike": 0.7206058495646949,
+        "ratio_vs_reference": 1.6962829189528752,
+        "ci": [
+          1.5823344591835034,
+          1.8059386209700947
+        ],
+        "p_holm": 5.1850639986010287e-20,
+        "p_raw": 6.481329998251286e-21,
+        "n_dates": 1735,
+        "n_effective": 185.2886190366735,
+        "verdict": "worse"
+      },
+      "har-log": {
+        "mean_qlike": 1.7572881737943007,
+        "ratio_vs_reference": 4.136599660807426,
+        "ci": [
+          3.7015701280275457,
+          4.590891320155144
+        ],
+        "p_holm": 0.00017651609865396744,
+        "p_raw": 2.9419349775661242e-05,
+        "n_dates": 1735,
+        "n_effective": 155.04967185760052,
+        "verdict": "worse"
+      },
+      "starter-small": {
+        "mean_qlike": 2.1687436835485454,
+        "ratio_vs_reference": 5.105152654828761,
+        "ci": [
+          4.664009832737295,
+          5.535580182290014
+        ],
+        "p_holm": 4.3793221243575727e-182,
+        "p_raw": 4.8659134715084144e-183,
+        "n_dates": 1735,
+        "n_effective": 186.458100212813,
+        "verdict": "worse"
+      },
+      "chronos-2": {
+        "mean_qlike": 4.236505953749508,
+        "ratio_vs_reference": 9.972598320883147,
+        "ci": [
+          9.128349292256603,
+          10.819685680709739
+        ],
+        "p_holm": 0.0,
+        "p_raw": 0.0,
+        "n_dates": 1735,
+        "n_effective": 210.4857717644302,
+        "verdict": "worse"
+      },
+      "_reference_mean_qlike": 0.4248146588716043
+    }
+  },
+  "gate": {
+    "horizon_days": 5,
+    "alpha_holm": 0.05,
+    "passed": false,
+    "failing": [
+      "har",
+      "timesfm3-vol-v1",
+      "har-iv",
+      "riskmetrics",
+      "iv-or-riskmetrics"
+    ]
+  }
+}

@@ -84,10 +84,11 @@ timesfm3 anomalies metrics.csv --context 192 --block 24 --threshold 2
 
 Each point is scored against the forecast the model made *before seeing
 it*: `score = 1` sits on the q10/q90 edge, so the default threshold of 2 is
-roughly 2.6σ for a Gaussian band (~1% of points). On seasonal test data with
-two planted spikes, the bundled model flags exactly those two with no false
-alarms; EWMA misses one and raises five — seasonality is what the neural
-model buys you here.
+roughly 2.6σ for a Gaussian band (~1% of points). Tune `--threshold` on
+your own data: the neural model's band follows seasonality while EWMA's is
+flat, so the two score the same spike differently. The
+suite's `tests/test_anomaly.py` pins the behaviour on a random walk with two
+planted ±8 spikes: both flagged, at most a handful of false alarms.
 
 ### Fine-tune on your data and prove it helped
 
@@ -99,8 +100,11 @@ Starts from the bundled checkpoint, trains on the first 80% of your panel,
 validates on the last 20%, packages the result, then runs the same
 walk-forward backtest the API serves on that held-out tail — base model vs
 fine-tuned vs the classical baselines — and prints the verdict. On the ETTh2
-demo panel, 200 CPU steps (under a minute) cut MAE 2.3% versus the base
-model. Serve the result with `timesfm3 serve --checkpoint sales-v1=sales-v1.pt`.
+demo panel, 200 CPU steps (under a minute) cut MAE versus the base model by
+1.1% in the 2026-09-04 re-run (ledger §1; an earlier 2.3% figure did not
+reproduce, and 1.1% is not shown to be significant), and on that held-out
+tail AR(4) beat both — which is exactly what the printed table is
+for. Serve the result with `timesfm3 serve --checkpoint sales-v1=sales-v1.pt`.
 
 ### Backtest before you believe anything
 
@@ -274,6 +278,45 @@ Packaged checkpoints are half precision with a provenance `meta` block; the
 server lists that metadata on `/v1/models`. Multiple checkpoints can be
 served at once (`--checkpoint` is repeatable, or set `TIMESFM3_MODEL_DIR`).
 
+### Bring someone else's checkpoint
+
+The registry's contract is two methods (`.model` for a parameter count,
+`.forecast(...)` for a `ForecastResult`) -- nothing in it is TimesFM-3
+specific. `timesfm3/serving/adapters.py` ships a real adapter for Amazon's
+open-weight Chronos, Chronos-Bolt and Chronos-2 models
+(`pip install "timesfm3[chronos]"`):
+
+```bash
+TIMESFM3_CHRONOS_MODELS=amazon/chronos-bolt-tiny timesfm3 serve
+# or alongside your own checkpoints:
+TIMESFM3_CHECKPOINTS=demand-v1=my-packed.pt TIMESFM3_CHRONOS_MODELS=amazon/chronos-bolt-small timesfm3 serve
+```
+
+`GET /v1/models` reports it with `"kind": "chronos"` and
+`"supports_covariates": false` -- the adapter forecasts each target
+univariately and raises on covariates rather than silently ignoring them
+(Chronos-2 itself accepts covariates; wiring them through is not done yet).
+Writing an adapter for another vendor's model is the same shape of work --
+`ChronosAdapter` is under 60 lines. Toto, Kronos and Granite adapters do
+not exist yet.
+
+**Measure before you choose -- including against us.** On the model card's
+ETTh2 panel (same command as the table above, plus
+`TIMESFM3_CHRONOS_MODELS`), every Chronos model beats the bundled starter:
+
+| model | mean MAE | ratio vs starter [95% CI] | verdict (Holm) |
+|---|---|---|---|
+| chronos-bolt-tiny (8.65 M) | 1.709 | 0.783 [0.738, 0.845] | better |
+| chronos-bolt-small (47.7 M) | 1.704 | 0.780 [0.735, 0.839] | better |
+| chronos-2 (119.5 M, univariate) | 1.770 | 0.811 [0.763, 0.872] | better |
+| starter-small (5.2 M) | 2.183 | 1.000 | reference |
+
+If that holds on your data, serve Chronos -- that is what the backtest is
+for. ETTh2 is held out for the original Chronos models, but whether it was
+in Chronos-Bolt's or Chronos-2's training data is not documented, so read
+this as "on this panel", not as a zero-shot result
+([`docs/VERIFICATION.md`](VERIFICATION.md) §9).
+
 ### Classical baselines
 
 Always registered. They have no quantile head, so their bands are
@@ -407,6 +450,7 @@ on-chain Privacy Pools funding and operator notes are in
 | `TIMESFM3_PRIVACY_PASS_ISSUER_NAME` | origin name | Issuer name in challenges and the issuer directory |
 | `TIMESFM3_CHECKPOINTS` | unset | Comma-separated `[name=]path` checkpoints to serve |
 | `TIMESFM3_MODEL_DIR` | unset (`/models` in Docker) | Serve every `*.pt` in this directory |
+| `TIMESFM3_CHRONOS_MODELS` | unset | Comma-separated `[name=]model_id` Chronos checkpoints to serve alongside TimesFM-3 (needs `timesfm3[chronos]`) |
 | `TIMESFM3_DEFAULT_MODEL` | last checkpoint added, else `ewma` | Model used when a request omits `model` |
 | `TIMESFM3_NO_BUNDLED` | `0` | `1` disables the bundled starter model |
 | `TIMESFM3_MAX_SERIES` | `64` | Series per request (targets + covariates) |

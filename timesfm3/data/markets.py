@@ -79,6 +79,50 @@ DEFAULT_UNIVERSE: tuple[Instrument, ...] = (
     Instrument("UST2Y", "DGS2", "bond", kind="yield", maturity_years=2.0),
 )
 
+#: Further FRED series, kept out of ``DEFAULT_UNIVERSE`` so the audited
+#: results built on it do not move.  Load them as their own panel: aligning
+#: them with the default universe would change its calendar.
+EXTRA_UNIVERSE: tuple[Instrument, ...] = (
+    Instrument("NASDAQ100", "NASDAQ100", "equity"),
+    Instrument("DJIA", "DJIA", "equity"),
+    Instrument("MXNUSD", "DEXMXUS", "fx", invert=True),
+    Instrument("KRWUSD", "DEXKOUS", "fx", invert=True),
+    Instrument("INRUSD", "DEXINUS", "fx", invert=True),
+    Instrument("BRLUSD", "DEXBZUS", "fx", invert=True),
+    Instrument("ZARUSD", "DEXSFUS", "fx", invert=True),
+    Instrument("CNYUSD", "DEXCHUS", "fx", invert=True),
+    Instrument("SGDUSD", "DEXSIUS", "fx", invert=True),
+    Instrument("TWDUSD", "DEXTAUS", "fx", invert=True),
+    Instrument("THBUSD", "DEXTHUS", "fx", invert=True),
+    Instrument("DKKUSD", "DEXDNUS", "fx", invert=True),
+    Instrument("MYRUSD", "DEXMAUS", "fx", invert=True),
+    Instrument("UST1Y", "DGS1", "bond", kind="yield", maturity_years=1.0),
+    Instrument("UST5Y", "DGS5", "bond", kind="yield", maturity_years=5.0),
+    Instrument("UST30Y", "DGS30", "bond", kind="yield", maturity_years=30.0),
+)
+
+#: Coinbase prices trade seven days a week: always load as a separate panel,
+#: or every other asset gets forward-filled zero-return weekends.
+CRYPTO_UNIVERSE: tuple[Instrument, ...] = (
+    Instrument("BTCUSD", "CBBTCUSD", "crypto"),
+    Instrument("ETHUSD", "CBETHUSD", "crypto"),
+    Instrument("LTCUSD", "CBLTCUSD", "crypto"),
+)
+
+#: CBOE implied-volatility index (FRED close, annualized %) for each asset
+#: that has one, or the closest proxy: NASDAQ (composite) uses the Nasdaq-100
+#: index, and BRENT uses OVX, which is CBOE's *WTI* crude volatility index (there
+#: is no Brent index on FRED).
+IMPLIED_VOL: dict[str, str] = {
+    "SP500": "VIXCLS",
+    "NASDAQ": "VXNCLS",
+    "NASDAQ100": "VXNCLS",
+    "DJIA": "VXDCLS",
+    "WTI": "OVXCLS",
+    "BRENT": "OVXCLS",
+    "EURUSD": "EVZCLS",
+}
+
 TRADING_DAYS = 252
 
 
