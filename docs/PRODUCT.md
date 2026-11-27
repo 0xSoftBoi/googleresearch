@@ -102,8 +102,8 @@ walk-forward backtest the API serves on that held-out tail — base model vs
 fine-tuned vs the classical baselines — and prints the verdict. On the ETTh2
 demo panel, 200 CPU steps (under a minute) cut MAE versus the base model by
 1.1% in the 2026-09-04 re-run (ledger §1; an earlier 2.3% figure did not
-reproduce, so the gain is small and noisy), and on that held-out tail AR(4)
-beat both — which is exactly what the printed table is
+reproduce, and 1.1% is not shown to be significant), and on that held-out
+tail AR(4) beat both — which is exactly what the printed table is
 for. Serve the result with `timesfm3 serve --checkpoint sales-v1=sales-v1.pt`.
 
 ### Backtest before you believe anything

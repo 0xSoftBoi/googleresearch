@@ -2,10 +2,29 @@
 
 ## 0.9.1 — stop the model research, launch the benchmark
 
+- **Look-ahead fix (ledger §17).** `realized_variance` floored zero-return
+  days with the full-history median and `ewma_variance` demeaned with the
+  full-history mean, so later returns touched earlier values. The floor now
+  comes from each asset's first 252 days and RiskMetrics runs on the same
+  variance series as the targets (`ewma_of_variance`); a test rewrites every
+  return after day k and asserts nothing up to k moves. Both volatility tests
+  re-run with the locked candidates (`results/vol_test_causal.json`,
+  `results/vol_test_v2_causal.json`; originals kept). Gates still fail.
+  Withdrawn: the fine-tune "significantly beats HAR (7.9%)" and "lowest of
+  eleven on unseen assets". HAR-IV now starts from raw history like HAR.
+- Review fixes: `finetune_qlike` returned base weights without a validation
+  set; `add_checkpoint(make_default=False)` displaced a Chronos default;
+  `finetune --evaluate` no longer loads env-listed models; `/v1/forecast`
+  rejects unequal-length targets when timestamps are given; Chronos
+  quantiles are sorted; adapter tests skip only on network errors; the vol
+  test commands refuse to overwrite a result file; the edge deploy job needs
+  both Cloudflare secrets and applies D1 migrations; tests no longer
+  hard-code a local checkout path.
 - `docs/launch/volatility-benchmark.md`: launch write-up of the volatility
-  results (ledger §11–16). Zero-shot foundation models lose to RiskMetrics
-  by 31–43% on 2020–2026 five-day QLIKE (up to 3.2× on unseen assets); two
-  pre-registered fine-tunes tie the classical frontier without beating it.
+  results (ledger §11–17). Used off the shelf, Chronos models lose to
+  RiskMetrics by 32–48% on 2020–2026 five-day QLIKE (the bundled starter by
+  3.6×); two pre-registered fine-tunes tie RiskMetrics and HAR without
+  significantly beating either.
 - `docs/LAUNCH.md`: deploy checklist (the edge Worker is not yet deployed),
   Show HN / Reddit / X copy, a direct-outreach script for quant and risk
   teams, day-14 success metrics, and what we are deliberately not doing.
@@ -27,6 +46,7 @@
   attempt-1 weights on validation; on 11 never-seen assets the model has the
   lowest five-day QLIKE of eleven (3.4% below RiskMetrics, 1% below HAR) but
   not significantly, so not released. Results: `results/vol_test_v2.json`.
+  *Corrected in 0.9.1 (ledger §17): HAR is lowest after the look-ahead fix.*
 
 ### Volatility specialization (pre-registered; gate failed, not released)
 
@@ -40,7 +60,8 @@
   starter-small, ties RiskMetrics on 2020–2026 five-day QLIKE (0.988×,
   p 0.53) and significantly beats HAR (7.9%) and every Chronos model
   (29–41%). The gate required beating RiskMetrics too, so it is not
-  released. Results: `results/vol_test.json`.
+  released. Results: `results/vol_test.json`. *Corrected in 0.9.1 (ledger
+  §17): the HAR win is not significant after the look-ahead fix.*
 
 ### Re-audit and benchmark (2026-11-21)
 

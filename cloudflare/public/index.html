@@ -113,15 +113,16 @@
 <section id="volatility"><div class="wrap">
   <div class="kicker">Volatility, measured</div>
   <h2>A 1994 formula still beats foundation models at volatility</h2>
-  <p class="lead">Five-day variance forecasts, 2020–2026 FRED daily data, QLIKE loss, every model calibrated on 2015–2019. Zero-shot foundation models lose to RiskMetrics. Our fine-tuned model ties it and beats HAR and every Chronos model, but the pre-registered gate required beating everything, so it did not ship. <code>/v1/volatility</code> serves the models that won: RiskMetrics and HAR.</p>
+  <p class="lead">Five-day variance forecasts, 2020–2026 FRED daily data, QLIKE loss, every model calibrated on 2015–2019. Used off the shelf, foundation models lose to RiskMetrics. Our fine-tuned model ties RiskMetrics and HAR, but the pre-registered gate required beating everything, so it did not ship. The self-hosted service's <code>/v1/volatility</code> serves the models that held up: RiskMetrics and HAR. (This free edge deployment does not serve volatility.)</p>
   <div class="card" style="margin-top:20px;overflow-x:auto"><table>
     <tr><th>model</th><th>QLIKE vs RiskMetrics</th><th>on 11 never-seen assets</th></tr>
     <tr><td><b>RiskMetrics</b> EWMA λ=0.94 (1994)</td><td class="ref">1.00×</td><td class="ref">1.00×</td></tr>
-    <tr><td>our TimesFM-3, fine-tuned on QLIKE</td><td>1.01× (tie)</td><td>0.97× (not significant)</td></tr>
-    <tr><td>Chronos-Bolt-small, zero-shot</td><td>1.31×</td><td>1.37×</td></tr>
-    <tr><td>Chronos-2, zero-shot</td><td>1.43×</td><td>3.22×</td></tr>
+    <tr><td>HAR (2009)</td><td>1.09×</td><td>0.97×</td></tr>
+    <tr><td>our TimesFM-3, fine-tuned on QLIKE</td><td>1.03× (tie)</td><td>0.97× (tie)</td></tr>
+    <tr><td>Chronos-Bolt-small, off the shelf</td><td>1.33×</td><td>1.39×</td></tr>
+    <tr><td>Chronos-2, off the shelf</td><td>1.48×</td><td>8.4×</td></tr>
   </table></div>
-  <p style="color:var(--muted);font-size:14px;margin-top:12px">Lower is better. Protocol, every training run and raw results: <a href="https://github.com/0xSoftBoi/googleresearch/blob/main/docs/launch/volatility-benchmark.md" rel="noopener">the write-up</a>.</p>
+  <p style="color:var(--muted);font-size:14px;margin-top:12px">Lower is better. Corrected 2026-11-27 after automated review found a look-ahead bug in our preprocessing; the earlier and corrected numbers are both published. Protocol, every training run, the erratum and raw results: <a href="https://github.com/0xSoftBoi/googleresearch/blob/main/docs/launch/volatility-benchmark.md" rel="noopener">the write-up</a>.</p>
 </div></section>
 
 <section id="pricing"><div class="wrap">

@@ -55,16 +55,19 @@ Order matters. Post on HN first, then Reddit the next day, then X.
 > independent TimesFM-3 implementation. Before claiming anything for finance,
 > we benchmarked volatility forecasting on 2020–2026 FRED daily data.
 >
-> Zero-shot, five days ahead, QLIKE: Chronos-Bolt is 31–40% worse than
-> RiskMetrics (J.P. Morgan's 1994 EWMA), and Chronos-2 is 43% worse, or
-> 3.2× worse on assets outside our training panel. That is after a
+> Off the shelf (no fine-tuning), five days ahead, QLIKE: Chronos-Bolt is
+> 32–41% worse than RiskMetrics (J.P. Morgan's 1994 EWMA), and Chronos-2 is
+> 48% worse, far more on assets outside our panel. That is after a
 > calibration fitted on 2015–2019 for every model.
 >
 > We then fine-tuned our own model on QLIKE twice, pre-registering the
-> release gate before scoring the test set. It reached a statistical tie with
-> RiskMetrics and beat HAR and every Chronos model. On 11 never-seen assets
-> it had the lowest loss of all eleven forecasters, but not significantly. So
-> it did not ship, and the losing rows are published.
+> release gate before scoring the test set. Both times it tied RiskMetrics
+> and HAR and beat every Chronos model, but never significantly beat the
+> classical models. So it did not ship, and the losing rows are published.
+>
+> An automated code review then found a look-ahead bug in our preprocessing.
+> We fixed it and re-ran: one earlier claim (a significant win over HAR) did
+> not survive, and the before/after table is in the write-up.
 >
 > The product is the harness: walk-forward backtest, HAC Diebold–Mariano,
 > Holm correction, on your own CSV, so you can see whether a fancy model
@@ -77,9 +80,12 @@ Order matters. Post on HN first, then Reddit the next day, then X.
 **Expected first questions, with answers:**
 
 - *"Why not intraday data?"* Cost. It is the one lever left, and we say so.
-- *"Did you fine-tune Chronos?"* No, zero-shot only. That is in the caveats.
+- *"Did you fine-tune Chronos?"* No, off the shelf only. That is in the caveats,
+  along with the fact that Chronos' training corpora are not fully published.
 - *"Isn't this just GARCH?"* RiskMetrics is IGARCH with fixed λ. HAR is the
-  standard academic benchmark. We beat HAR significantly, not RiskMetrics.
+  standard academic benchmark. We tie both; we beat neither significantly.
+- *"What was the bug?"* The zero-return floor and RiskMetrics' demeaning used
+  each asset's full history. Fixed, tested, re-run; ledger §17 has both tables.
 
 ### Reddit: r/algotrading (day 2)
 
@@ -95,15 +101,16 @@ pre-registration, and link the repo. Do not lead with pricing.
 
 1. Time-series foundation models are everywhere. We tested them on the
    thing quants actually pay for: volatility. A 1994 formula wins. 🧵
-2. Zero-shot, 5-day QLIKE vs RiskMetrics: Chronos-Bolt 1.31×, Chronos-2
-   1.43×, and 3.2× on unseen assets. (Table image: screenshot the write-up
-   table.)
+2. Off the shelf, 5-day QLIKE vs RiskMetrics: Chronos-Bolt 1.32–1.33×,
+   Chronos-2 1.48×. (Table image: screenshot the write-up table.)
 3. We fine-tuned our own model twice and pre-registered the gate. Result: a
-   tie with RiskMetrics, a significant win over HAR and every Chronos model.
+   tie with RiskMetrics and HAR, a significant win over every Chronos model.
    The gate said beat everything, so it didn't ship.
-4. Lesson: on daily closes, the classical frontier is hard to move. Ask any
+4. Then a code review caught a look-ahead bug in our harness. We fixed it
+   and re-ran; one claim died. Both tables are public.
+5. Lesson: on daily closes, the classical frontier is hard to move. Ask any
    vendor for the QLIKE table.
-5. The harness that produced this runs on your CSV, open source: <repo>
+6. The harness that produced this runs on your CSV, open source: <repo>
 
 ## Day 2–10: direct outreach (the step that actually produces revenue)
 
@@ -116,8 +123,8 @@ researcher", "risk", "volatility" at firms with 10–200 staff. Send 5 a day.
 > Subject: Foundation models vs RiskMetrics for vol: our numbers
 >
 > Hi {name}, we benchmarked Chronos and TimesFM against RiskMetrics and HAR
-> on 2020–2026 daily data. Zero-shot, the foundation models lose by 31–43%
-> on QLIKE, and a pre-registered fine-tune only ties RiskMetrics. Write-up:
+> on 2020–2026 daily data. Off the shelf, the foundation models lose by
+> 32–48% on QLIKE, and a pre-registered fine-tune only ties RiskMetrics. Write-up:
 > <link>.
 >
 > If {firm} is evaluating ML forecasters, we'll run the same significance-

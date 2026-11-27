@@ -337,6 +337,10 @@ is run once, with this file.
 
 ## 13. Test result: gate FAILED (run once, 2026-11-21)
 
+> **Corrected in §17.** The preprocessing below leaked future returns into
+> the variance floor and RiskMetrics. The gate result stands; the HAR
+> verdict and several figures changed.
+
 `python examples/hedge_fund/train_vol_model.py test --candidate data/vol/ft6.pt`
 (candidate sha256 `cf0be395…6862`, as locked in §12). Test period
 2020-01-02 .. 2026-11-12: 1,775 dates, 28,398 forecasts, 16 assets.
@@ -477,6 +481,10 @@ once, as pre-registered, for the out-of-asset evidence.
 
 ## 16. Attempt 2 test result: gate FAILED (run once, 2026-11-21)
 
+> **Corrected in §17.** Same look-ahead as §13. The gate result stands; the
+> candidate is no longer the lowest of the eleven, and Chronos-2's ratio
+> changed by a factor of 2.5.
+
 `python examples/hedge_fund/train_vol_model_v2.py test --candidate data/vol/v2b.pt`
 (sha256 `61b2b984…7a4b`, as locked in §15). Holdout: 11 assets never used
 for training, validation or selection; 2020-01-01 .. 2026-11-15 (2,511
@@ -527,6 +535,98 @@ forecasters without beating them significantly. Neither more daily-close
 history nor CBOE implied vol moved the frontier here; that leaves
 higher-frequency information (intraday realized variance) as the untested
 lever.
+
+---
+
+## 17. Erratum: look-ahead in the variance proxy and RiskMetrics (found 2026-11-27, re-run)
+
+**What was wrong.** Automated review of PR #6 (Devin, cubic) found two
+look-ahead paths in the §11–16 harness, both confirmed in code:
+
+1. `realized_variance` floored zero-return days at 1e-4 × the median squared
+   return of the asset's *whole* history, so test-period returns changed
+   earlier inputs and targets (all models).
+2. `ewma_variance`, used for RiskMetrics, squared returns demeaned by the
+   *whole-history* mean.
+
+**Fix** (commit `74640f2`): the floor is fixed from each asset's first 252
+observations, which precede every scored origin (the first is day 511);
+demeaning is off by default; the benchmark's RiskMetrics runs the recursion
+on the same variance series as the targets (`ewma_of_variance`).
+`tests/test_volmodel.py::test_no_future_return_changes_any_earlier_input_target_or_benchmark`
+replaces every return after day k and asserts that no input, target,
+feature or classical forecast up to k moves; it fails on the old code.
+The same commit makes HAR-IV start its iteration from raw history, like
+HAR, so the two differ only by the implied-variance term (Devin).
+
+**Re-run** (2026-11-27, same cached FRED files, the same locked candidates
+`cf0be395…6862` and `61b2b984…7a4b`, torch 2.15.0+cpu, Python 3.11):
+
+```bash
+python examples/hedge_fund/train_vol_model.py test --candidate data/vol/ft6.pt --json results/vol_test_causal.json
+python examples/hedge_fund/train_vol_model_v2.py test --candidate data/vol/v2b.pt --json results/vol_test_v2_causal.json
+```
+
+The candidates were **not** retrained: they were fit on inputs built with
+the old floor, which is a small train/test mismatch for them (their
+validation-fitted five-day scales moved from 0.995 to 0.916 and from 1.035
+to 0.953). Re-training would be a new experiment on spent test data.
+
+Five-day QLIKE as a ratio to RiskMetrics (lower is better; per-date average
+across assets; validation-fitted calibration for every model):
+
+| model | §13 panel, old | §13 panel, **corrected** | §16 holdout, old | §16 holdout, **corrected** |
+|---|---|---|---|---|
+| RiskMetrics | 1.000 | **1.000** | 1.000 | **1.000** |
+| HAR | 1.091 | **1.092** | 0.977 | **0.973** |
+| fine-tuned candidate | 1.012 | **1.028** | 0.967 | **0.974** |
+| Chronos-Bolt-tiny | 1.324 | **1.322** | 1.400 | **1.406** |
+| Chronos-Bolt-small | 1.309 | **1.334** | 1.372 | **1.387** |
+| Chronos-2 | 1.430 | **1.482** | 3.223 | **8.436** |
+| starter-small (no fine-tuning) | 2.702 | **3.648** | 3.526 | **4.161** |
+| HAR-log | 1.455 | **2.510** | 1.902 | **3.442** |
+
+Pre-registered tests against the candidate (HAC Diebold–Mariano, Holm),
+corrected:
+
+- **§13 panel.** RiskMetrics 0.972× the candidate (Holm p 0.12, no
+  difference); **HAR 1.062× (Holm p 0.12, no difference)**, previously
+  "candidate better" at p 0.021; every Chronos model, HAR-log and the
+  starter remain significantly worse (Holm p ≤ 2e-10). Next day: RiskMetrics
+  and HAR no difference (p 0.10), the rest worse.
+- **§16 holdout.** All five classical/attempt-1 competitors no difference
+  (Holm p 0.37–0.96). **HAR now has the lowest five-day loss (0.4859 vs the
+  candidate's 0.4863)**, so "the candidate is lowest of eleven" is
+  withdrawn. Chronos models, HAR-log and the starter remain significantly
+  worse. On the two holdout assets with an implied-vol index, HAR-IV is
+  still 14% worse than plain HAR at five days (0.502 vs 0.440).
+- **Gates.** Both still FAILED; nothing is released.
+
+**Sensitivity.** RiskMetrics and HAR, which forecast in levels, barely
+moved (RiskMetrics 0.4944 → 0.4940 on the §13 panel). Models that forecast
+log variance moved a lot, because zero-return days become very negative
+log values and the floor level is a preprocessing choice: Chronos-2 on the
+holdout went from 3.2× to 8.4× RiskMetrics with nothing else changed. Treat
+any single multiple for a log-space model as fragile; the robust finding is
+the ordering: on all four five-day views every off-the-shelf foundation
+model is at least 30% worse than RiskMetrics (next day, corrected, at least
+13%).
+
+**Confidence intervals.** The CIs in these result files resample dates
+independently (`paired_bootstrap` without groups), which ignores the
+four-day overlap of consecutive five-day targets and understates
+uncertainty (Devin, cubic). The verdicts and gates use the HAC
+Diebold–Mariano p-values, which do account for it. Example: the §13
+RiskMetrics CI [0.954, 0.990] excludes 1 while HAC p is 0.12; the HAC
+verdict is the one reported. "Cluster bootstrap" in earlier wording was
+wrong for these tables.
+
+**What changes downstream.** `docs/launch/volatility-benchmark.md`, the
+landing page, `docs/LAUNCH.md`, `docs/BUSINESS.md` and `CHANGELOG.md` now
+use the corrected figures. Withdrawn: "significantly beat HAR by 7.9%",
+"lowest of all eleven forecasters", "3.4% below RiskMetrics", "Chronos-2
+3.2× on unseen assets". The original result files are kept unchanged next
+to the corrected ones.
 
 ---
 
