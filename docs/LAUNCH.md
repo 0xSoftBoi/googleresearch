@@ -12,10 +12,20 @@ the copy, ready to paste.
 The edge Worker is **not deployed yet**. On 2026-11-22 the Cloudflare
 account had one Worker, `suwappu-router`, and no `timesfm3-edge`.
 
+The KV namespace `timesfm3-edge` and the D1 database `timesfm3-credits` already
+exist in the account. D1 has no tables yet; the first deploy applies the
+migration.
+
 1. Merge this branch to `main`. The Deploy button in the README points at
    `main/cloudflare`.
-2. Click **Deploy to Cloudflare** in the README, or from `cloudflare/` run
-   `npm install && npx wrangler deploy`. You get
+2. Fastest: create a Cloudflare API token (Workers Scripts:Edit, Workers KV
+   Storage:Edit, D1:Edit) and add it to the GitHub repo as the
+   `CLOUDFLARE_API_TOKEN` secret, plus `CLOUDFLARE_ACCOUNT_ID` (your
+   personal account's ID, shown on the Workers dashboard). Then run the **cloudflare-edge**
+   workflow (Actions tab, *Run workflow*). From then on, every push to `main`
+   that touches `cloudflare/` deploys. Alternatives: the **Deploy to
+   Cloudflare** button, or `cd cloudflare && npm install && npx wrangler
+   deploy && npx wrangler d1 migrations apply timesfm3-credits --remote`. You get
    `timesfm3-edge.<account>.workers.dev`: landing page, JS classical API,
    in-browser TimesFM-3, waitlist in KV. There is no backend to pay for.
 3. Optional: attach a custom domain in the Cloudflare dashboard, then replace
